@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>London Grid Square Explorer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,33 +20,36 @@
             <span class="btn-text">Generate Random Square</span>
         </button>
 
-        <div id="info" class="info hidden">
-            <div class="info-item">
-                <label>Grid Reference (1km)</label>
-                <div class="info-value" id="grid-ref"></div>
+        <div class="content-wrapper hidden" id="content-wrapper">
+            <div id="info" class="info">
+                <div class="info-item">
+                    <label>Grid Reference (1km)</label>
+                    <div class="info-value" id="grid-ref"></div>
+                </div>
+                <div class="info-item">
+                    <label>Coordinates</label>
+                    <div class="info-value" id="location"></div>
+                </div>
             </div>
-            <div class="info-item">
-                <label>Coordinates</label>
-                <div class="info-value" id="location"></div>
+
+            <div id="actions" class="actions">
+                <button id="view-10km-btn" class="action-btn">
+                    <span>📐</span> View 10km Square
+                </button>
+                <a id="google-maps-link" class="action-btn" target="_blank" rel="noopener">
+                    <span>🗺️</span> Open in Google Maps
+                </a>
             </div>
-        </div>
 
-        <div id="actions" class="actions hidden">
-            <button id="view-10km-btn" class="action-btn">
-                <span>📐</span> View 10km Square
-            </button>
-            <a id="google-maps-link" class="action-btn" target="_blank" rel="noopener">
-                <span>🗺️</span> Open in Google Maps
-            </a>
-        </div>
-
-        <div class="map-container">
-            <div class="main-map">
+            <div class="map-stations-grid">
                 <div id="map"></div>
-            </div>
-            <div class="overview-map">
-                <h3>Location in Greater London</h3>
-                <div id="overview-map"></div>
+
+                <div id="stations" class="stations-section">
+                    <h3>Nearest Stations</h3>
+                    <div id="stations-content">
+                        <p class="loading">Finding stations...</p>
+                    </div>
+                </div>
             </div>
         </div>
 
