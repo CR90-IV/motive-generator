@@ -169,31 +169,67 @@ function getRandomSquare() {
 
 // Map initialization
 let map;
+let overviewMap;
 let currentMarker;
+let overviewMarker;
+let currentEasting;
+let currentNorthing;
+let original1kmEasting;
+let original1kmNorthing;
+let currentViewMode = '1km'; // '1km' or '10km'
 
 function initMap() {
-    map = L.map('map').setView([51.5074, -0.1278], 10);  // Center on London
+    map = L.map('map').setView([51.5074, -0.1278], 10);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 19
     }).addTo(map);
+
+    // Initialize overview map
+    overviewMap = L.map('overview-map', {
+        zoomControl: false,
+        dragging: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        tap: false
+    }).setView([51.5074, -0.1278], 10);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(overviewMap);
 }
 
-function showSquareOnMap(easting, northing) {
-    const center = osGridToLatLon(easting + 500, northing + 500);  // Center of 1km square
+function showSquareOnMap(easting, northing, squareSize = 1000) {
+    currentEasting = easting;
+    currentNorthing = northing;
+    currentViewMode = squareSize === 1000 ? '1km' : '10km';
+
+    // Store original 1km coordinates when first showing
+    if (squareSize === 1000) {
+        original1kmEasting = easting;
+        original1kmNorthing = northing;
+    }
+
+    const center = osGridToLatLon(easting + squareSize / 2, northing + squareSize / 2);
     const gridRef = formatGridRef(easting, northing);
 
     // Remove previous marker if exists
     if (currentMarker) {
         map.removeLayer(currentMarker);
     }
+    if (overviewMarker) {
+        overviewMap.removeLayer(overviewMarker);
+    }
 
-    // Draw square on map
+    // Draw square on main map
     const sw = osGridToLatLon(easting, northing);
-    const ne = osGridToLatLon(easting + 1000, northing + 1000);
-    const nw = osGridToLatLon(easting, northing + 1000);
-    const se = osGridToLatLon(easting + 1000, northing);
+    const ne = osGridToLatLon(easting + squareSize, northing + squareSize);
+    const nw = osGridToLatLon(easting, northing + squareSize);
+    const se = osGridToLatLon(easting + squareSize, northing);
 
     const square = L.polygon([
         [sw.lat, sw.lon],
@@ -201,9 +237,9 @@ function showSquareOnMap(easting, northing) {
         [ne.lat, ne.lon],
         [nw.lat, nw.lon]
     ], {
-        color: '#007bff',
-        fillColor: '#007bff',
-        fillOpacity: 0.3,
+        color: '#111827',
+        fillColor: '#111827',
+        fillOpacity: 0.2,
         weight: 2
     }).addTo(map);
 
@@ -212,16 +248,72 @@ function showSquareOnMap(easting, northing) {
     // Fit map to square
     map.fitBounds(square.getBounds(), { padding: [50, 50] });
 
+    // Show marker on overview map
+    const overviewSquare = L.polygon([
+        [sw.lat, sw.lon],
+        [se.lat, se.lon],
+        [ne.lat, ne.lon],
+        [nw.lat, nw.lon]
+    ], {
+        color: '#dc2626',
+        fillColor: '#dc2626',
+        fillOpacity: 0.4,
+        weight: 2
+    }).addTo(overviewMap);
+
+    overviewMarker = overviewSquare;
+
+    // Fit overview map to London bounds
+    const londonSW = osGridToLatLon(LONDON_BOUNDS.minEasting, LONDON_BOUNDS.minNorthing);
+    const londonNE = osGridToLatLon(LONDON_BOUNDS.maxEasting, LONDON_BOUNDS.maxNorthing);
+    overviewMap.fitBounds([[londonSW.lat, londonSW.lon], [londonNE.lat, londonNE.lon]], { padding: [10, 10] });
+
     // Update info display
-    document.getElementById('grid-ref').textContent = gridRef;
+    const gridRefDisplay = squareSize === 1000 ? gridRef : get10kmGridRef(gridRef);
+    const gridRefLabel = document.querySelector('.info-item label');
+    gridRefLabel.textContent = squareSize === 1000 ? 'Grid Reference (1km)' : 'Grid Reference (10km)';
+    document.getElementById('grid-ref').textContent = gridRefDisplay;
     document.getElementById('location').textContent = `${center.lat.toFixed(5)}°N, ${Math.abs(center.lon).toFixed(5)}°W`;
     document.getElementById('info').classList.remove('hidden');
+    document.getElementById('actions').classList.remove('hidden');
+
+    // Update Google Maps link
+    const googleMapsLink = `https://www.google.com/maps?q=${center.lat},${center.lon}`;
+    document.getElementById('google-maps-link').href = googleMapsLink;
+
+    // Update 10km button text
+    const view10kmBtn = document.getElementById('view-10km-btn');
+    if (squareSize === 1000) {
+        view10kmBtn.innerHTML = '<span>📐</span> View 10km Square';
+    } else {
+        view10kmBtn.innerHTML = '<span>🔍</span> View 1km Square';
+    }
+}
+
+function get10kmGridRef(gridRef) {
+    // Extract 10km square from grid ref (e.g., TQ5075 -> TQ57)
+    if (gridRef.length >= 4) {
+        return gridRef.substring(0, 2) + gridRef.charAt(2) + gridRef.charAt(4);
+    }
+    return gridRef;
 }
 
 // Event listeners
 document.getElementById('randomize-btn').addEventListener('click', () => {
     const { easting, northing } = getRandomSquare();
-    showSquareOnMap(easting, northing);
+    showSquareOnMap(easting, northing, 1000);
+});
+
+document.getElementById('view-10km-btn').addEventListener('click', () => {
+    if (currentViewMode === '1km') {
+        // Switch to 10km view - round down to nearest 10km
+        const easting10km = Math.floor(original1kmEasting / 10000) * 10000;
+        const northing10km = Math.floor(original1kmNorthing / 10000) * 10000;
+        showSquareOnMap(easting10km, northing10km, 10000);
+    } else {
+        // Switch back to original 1km view
+        showSquareOnMap(original1kmEasting, original1kmNorthing, 1000);
+    }
 });
 
 // Initialize map on load

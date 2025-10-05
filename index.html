@@ -3,21 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>London Grid Square Generator</title>
+    <title>London Grid Square Explorer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
-        <h1>London Grid Square Generator</h1>
-        <button id="randomize-btn" class="randomize-btn">Randomise</button>
+        <header class="header">
+            <h1>London Grid Square Generator</h1>
+            <p class="subtitle">Generate random 1km² OS squares across Greater London</p>
+        </header>
+
+        <button id="randomize-btn" class="randomize-btn">
+            <span class="btn-icon">🎲</span>
+            <span class="btn-text">Generate Random Square</span>
+        </button>
 
         <div id="info" class="info hidden">
-            <h2>Grid Reference: <span id="grid-ref"></span></h2>
-            <p>Location: <span id="location"></span></p>
+            <div class="info-item">
+                <label>Grid Reference (1km)</label>
+                <div class="info-value" id="grid-ref"></div>
+            </div>
+            <div class="info-item">
+                <label>Coordinates</label>
+                <div class="info-value" id="location"></div>
+            </div>
         </div>
 
-        <div id="map"></div>
+        <div id="actions" class="actions hidden">
+            <button id="view-10km-btn" class="action-btn">
+                <span>📐</span> View 10km Square
+            </button>
+            <a id="google-maps-link" class="action-btn" target="_blank" rel="noopener">
+                <span>🗺️</span> Open in Google Maps
+            </a>
+        </div>
+
+        <div class="map-container">
+            <div class="main-map">
+                <div id="map"></div>
+            </div>
+            <div class="overview-map">
+                <h3>Location in Greater London</h3>
+                <div id="overview-map"></div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>Using Ordnance Survey National Grid • 1km squares aligned to OSGB36</p>
+        </footer>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
