@@ -3,9 +3,7 @@
 
 // OS Grid conversion functions
 function osGridToLatLon(easting, northing) {
-    // Simplified Transverse Mercator projection conversion
-    // Using OSGB36 to WGS84 approximation
-
+    // OSGB36 ellipsoid parameters (Airy 1830)
     const a = 6377563.396;  // semi-major axis
     const b = 6356256.909;  // semi-minor axis
     const F0 = 0.9996012717;  // scale factor on central meridian
@@ -19,7 +17,7 @@ function osGridToLatLon(easting, northing) {
     let lat = lat0;
     let M = 0;
 
-    // Iterate to find latitude
+    // Iterate to find latitude (OSGB36)
     do {
         lat = ((northing - N0 - M) / (a * F0)) + lat;
         const Ma = (1 + n + (5/4)*n*n + (5/4)*n*n*n) * (lat - lat0);
@@ -62,33 +60,94 @@ function osGridToLatLon(easting, northing) {
     lat = lat - VII * dE2 + VIII * dE4 - IX * dE6;
     const lon = lon0 + X * dE - XI * dE3 + XII * dE5 - XIIA * dE7;
 
+    // Convert OSGB36 lat/lon to WGS84 using Helmert transformation
+    const latLonWGS84 = osgb36ToWGS84(lat, lon, a, b);
+
     return {
-        lat: lat * 180 / Math.PI,
-        lon: lon * 180 / Math.PI
+        lat: latLonWGS84.lat * 180 / Math.PI,
+        lon: latLonWGS84.lon * 180 / Math.PI
     };
 }
 
+// Helmert transformation from OSGB36 to WGS84
+function osgb36ToWGS84(latOSGB, lonOSGB, aOSGB, bOSGB) {
+    // WGS84 ellipsoid parameters
+    const aWGS = 6378137.000;
+    const bWGS = 6356752.3142;
+
+    // Helmert transformation parameters (OSGB36 to WGS84)
+    const tx = 446.448;    // metres
+    const ty = -125.157;   // metres
+    const tz = 542.060;    // metres
+    const s = -20.4894;    // ppm
+    const rx = 0.1502;     // arcseconds
+    const ry = 0.2470;     // arcseconds
+    const rz = 0.8421;     // arcseconds
+
+    // Convert lat/lon to Cartesian coordinates (OSGB36)
+    const sinLat = Math.sin(latOSGB);
+    const cosLat = Math.cos(latOSGB);
+    const sinLon = Math.sin(lonOSGB);
+    const cosLon = Math.cos(lonOSGB);
+    const e2OSGB = 1 - (bOSGB * bOSGB) / (aOSGB * aOSGB);
+    const nu = aOSGB / Math.sqrt(1 - e2OSGB * sinLat * sinLat);
+
+    const x1 = nu * cosLat * cosLon;
+    const y1 = nu * cosLat * sinLon;
+    const z1 = nu * (1 - e2OSGB) * sinLat;
+
+    // Apply Helmert transformation
+    const sc = s * 1e-6 + 1;  // scale factor
+    const rxRad = rx * Math.PI / 648000;  // arcseconds to radians
+    const ryRad = ry * Math.PI / 648000;
+    const rzRad = rz * Math.PI / 648000;
+
+    const x2 = tx + sc * x1 - rzRad * y1 + ryRad * z1;
+    const y2 = ty + rzRad * x1 + sc * y1 - rxRad * z1;
+    const z2 = tz - ryRad * x1 + rxRad * y1 + sc * z1;
+
+    // Convert Cartesian back to lat/lon (WGS84)
+    const e2WGS = 1 - (bWGS * bWGS) / (aWGS * aWGS);
+    const p = Math.sqrt(x2 * x2 + y2 * y2);
+    let latWGS = Math.atan2(z2, p * (1 - e2WGS));
+
+    // Iterate to refine latitude
+    for (let i = 0; i < 10; i++) {
+        const sinLatWGS = Math.sin(latWGS);
+        const nuWGS = aWGS / Math.sqrt(1 - e2WGS * sinLatWGS * sinLatWGS);
+        latWGS = Math.atan2(z2 + e2WGS * nuWGS * sinLatWGS, p);
+    }
+
+    const lonWGS = Math.atan2(y2, x2);
+
+    return { lat: latWGS, lon: lonWGS };
+}
+
 function formatGridRef(easting, northing) {
-    // Convert to 100km square letters
-    const e100k = Math.floor(easting / 100000);
-    const n100k = Math.floor(northing / 100000);
+    // Get the 100km-grid indices
+    const e100km = Math.floor(easting / 100000);
+    const n100km = Math.floor(northing / 100000);
 
-    // First letter (500km square)
-    const firstLetter = 'T';  // Greater London is in T square
+    // Translate those into numeric equivalents of the grid letters
+    // Using the official OS algorithm with false origin at SV
+    let l1 = (19 - n100km) - (19 - n100km) % 5 + Math.floor((e100km + 10) / 5);
+    let l2 = (19 - n100km) * 5 % 25 + e100km % 5;
 
-    // Second letter (100km square)
-    const secondLetters = ['VWXYZ', 'QRSTU', 'LMNOP', 'FGHJK', 'ABCDE'];
-    const secondLetter = secondLetters[4 - n100k % 5][e100k % 5];
+    // Compensate for skipped 'I'
+    if (l1 > 7) l1++;
+    if (l2 > 7) l2++;
 
-    // Get eastings and northings within the 100km square
-    const e = Math.floor(easting % 100000);
-    const n = Math.floor(northing % 100000);
+    const letterPair = String.fromCharCode(l1 + 'A'.charCodeAt(0), l2 + 'A'.charCodeAt(0));
 
-    // 1km square reference (5 digits each)
-    const eStr = e.toString().padStart(5, '0');
-    const nStr = n.toString().padStart(5, '0');
+    // Get eastings and northings within the 100km square (in km for compact format)
+    const e = Math.floor((easting % 100000) / 1000);
+    const n = Math.floor((northing % 100000) / 1000);
 
-    return `${firstLetter}${secondLetter} ${eStr} ${nStr}`;
+    // Format as compact reference (e.g., TQ4289)
+    const eStr = e.toString().padStart(2, '0');
+    const nStr = n.toString().padStart(2, '0');
+
+    return `${letterPair}${eStr}${nStr}`;
 }
 
 // Greater London boundaries (approximate, in OS Grid)
