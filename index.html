@@ -12,9 +12,15 @@
     <!-- Sticky header -->
     <header class="app-header">
         <h1>London Motive Generator</h1>
-        <button id="randomize-btn" class="randomize-btn" aria-label="Generate random square">
-            <span class="material-symbols-outlined">refresh</span>
-        </button>
+        <div class="header-controls">
+            <button id="central-toggle" class="central-toggle" aria-label="Toggle central London only">
+                <span class="material-symbols-outlined">location_city</span>
+                <span class="toggle-label">Central London only</span>
+            </button>
+            <button id="randomize-btn" class="randomize-btn" aria-label="Generate random square">
+                <span class="material-symbols-outlined">refresh</span>
+            </button>
+        </div>
     </header>
 
     <!-- Full-screen map -->
@@ -24,8 +30,8 @@
     <div id="empty-state" class="empty-state">
         <div class="empty-content">
             <span class="material-symbols-outlined empty-icon">location_searching</span>
-            <h2>Find a motive in London</h2>
-            <p>Generate a random 1km² Ordnance Survey square</p>
+            <h2>Generate random grid squares</h2>
+            <p>1km squares from the Ordnance Survey National Grid<p>
             <button class="empty-cta" onclick="document.getElementById('randomize-btn').click()">
                 <span class="material-symbols-outlined">refresh</span>
                 Generate first square
@@ -103,6 +109,11 @@
     <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="app.js"></script>
+    <script src="utils.js"></script>
+    <script src="grid.js"></script>
+    <script src="map.js"></script>
+    <script src="stations.js"></script>
+    <script src="pois.js"></script>
+    <script src="ui.js"></script>
 </body>
 </html>

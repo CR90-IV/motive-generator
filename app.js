@@ -1,3 +1,14 @@
+function hexToRgba(hex, alpha = 1) {
+  const m = hex.replace('#','');
+  const bigint = parseInt(m.length === 3
+    ? m.split('').map(c => c+c).join('')
+    : m, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // ========================================
 // Ordnance Survey Grid Conversion
 // ========================================
@@ -451,10 +462,10 @@ async function findNearbyStations(easting, northing, squareSize) {
             let displayMeta = null;
             if (line) {
                 displayMeta = formatLineName(line);
-            } else if (network) {
-                displayMeta = network;
             } else if (operator && network === 'National Rail') {
                 displayMeta = operator;
+            } else if (network) {
+                displayMeta = network;
             }
 
             return {
@@ -651,10 +662,9 @@ function getStationMarkerIcon(type) {
         <div style="
             width: 24px;
             height: 24px;
-            background: ${color};
-            border: 2px solid white;
+            background: ${hexToRgba(color, 0.5)};
+            border: 2px solid ${color};
             border-radius: 50%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         "></div>
     `;
 }
@@ -897,10 +907,9 @@ function getPOIMarkerIcon(type) {
         <div style="
             width: 18px;
             height: 18px;
-            background: ${color};
-            border: 2px solid white;
+            background: ${hexToRgba(color, 0.5)};
+            border: 1px solid ${color};
             border-radius: 50%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         "></div>
     `;
 }
