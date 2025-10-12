@@ -204,11 +204,14 @@ function initSheet() {
     // Check if desktop
     const isDesktop = () => window.innerWidth >= 768;
 
+    let startTime = 0;
+
     // Touch/mouse event handlers
     function handleStart(e) {
         if (isDesktop()) return;
 
         isDragging = true;
+        startTime = Date.now();
         const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
         dragStartY = clientY;
         sheetStartY = sheet.getBoundingClientRect().top;
@@ -218,60 +221,83 @@ function initSheet() {
     function handleMove(e) {
         if (!isDragging || isDesktop()) return;
 
-        e.preventDefault();
         const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
         const deltaY = clientY - dragStartY;
-        const newY = sheetStartY + deltaY;
 
-        const maxY = window.innerHeight;
-        const minY = document.querySelector('.app-header').offsetHeight + 20;
+        // Only start dragging if moved more than 5px (prevents interference with clicks)
+        if (Math.abs(deltaY) < 5) return;
 
-        if (newY >= minY && newY <= maxY) {
-            const translateY = maxY - (maxY - newY);
-            sheet.style.transform = `translateY(${translateY}px)`;
-        }
+        e.preventDefault();
+
+        // Calculate the new position
+        const windowHeight = window.innerHeight;
+        const currentBottom = windowHeight - sheetStartY;
+        const newBottom = currentBottom - deltaY;
+
+        // Constrain between peek height and full height
+        const minBottom = 180; // peek height
+        const maxBottom = windowHeight - document.querySelector('.app-header').offsetHeight - 20;
+        const constrainedBottom = Math.max(minBottom, Math.min(maxBottom, newBottom));
+
+        // Set transform based on how far from bottom
+        const translateY = windowHeight - constrainedBottom;
+        sheet.style.transform = `translateY(${translateY}px)`;
     }
 
     function handleEnd(e) {
         if (!isDragging || isDesktop()) return;
 
+        const endTime = Date.now();
+        const timeDiff = endTime - startTime;
+
         isDragging = false;
-        sheet.style.transition = '';
 
         const clientY = e.type.includes('touch') ? e.changedTouches[0].clientY : e.clientY;
         const deltaY = clientY - dragStartY;
-        const velocity = deltaY;
 
-        // Determine next state based on velocity and position
-        const currentTranslate = sheet.getBoundingClientRect().top;
+        // If it was a quick tap (< 200ms) and small movement (< 5px), ignore
+        if (timeDiff < 200 && Math.abs(deltaY) < 5) {
+            // Reset to current state without changing
+            setSheetState(sheetState);
+            return;
+        }
+
+        // Calculate velocity (pixels per second)
+        const velocity = deltaY / (timeDiff / 1000);
+
+        // Get current position
+        const currentTop = sheet.getBoundingClientRect().top;
         const windowHeight = window.innerHeight;
         const headerHeight = document.querySelector('.app-header').offsetHeight;
 
         let newState;
 
-        if (velocity > 50) {
-            // Dragging down
-            if (sheetState === 'full') newState = 'half';
-            else if (sheetState === 'half') newState = 'peek';
-            else newState = 'peek';
-        } else if (velocity < -50) {
-            // Dragging up
-            if (sheetState === 'peek') newState = 'half';
-            else if (sheetState === 'half') newState = 'full';
-            else newState = 'full';
+        // Fast swipe - change state based on direction
+        if (Math.abs(velocity) > 500) {
+            if (velocity > 0) {
+                // Fast swipe down
+                if (sheetState === 'full') newState = 'half';
+                else if (sheetState === 'half') newState = 'peek';
+                else newState = 'peek';
+            } else {
+                // Fast swipe up
+                if (sheetState === 'peek') newState = 'half';
+                else if (sheetState === 'half') newState = 'full';
+                else newState = 'full';
+            }
         } else {
-            // Snap to nearest
-            const peekY = windowHeight - 180;
-            const halfY = windowHeight / 2;
-            const fullY = headerHeight + 20;
+            // Slow drag - snap to nearest state
+            const peekTop = windowHeight - 180;
+            const halfTop = windowHeight / 2;
+            const fullTop = headerHeight + 20;
 
-            const distToPeek = Math.abs(currentTranslate - peekY);
-            const distToHalf = Math.abs(currentTranslate - halfY);
-            const distToFull = Math.abs(currentTranslate - fullY);
+            const distToPeek = Math.abs(currentTop - peekTop);
+            const distToHalf = Math.abs(currentTop - halfTop);
+            const distToFull = Math.abs(currentTop - fullTop);
 
-            if (distToPeek < distToHalf && distToPeek < distToFull) {
+            if (distToPeek <= distToHalf && distToPeek <= distToFull) {
                 newState = 'peek';
-            } else if (distToHalf < distToFull) {
+            } else if (distToHalf <= distToFull) {
                 newState = 'half';
             } else {
                 newState = 'full';
@@ -281,22 +307,25 @@ function initSheet() {
         setSheetState(newState);
     }
 
-    // Event listeners
+    // Event listeners - only on handle
     handle.addEventListener('mousedown', handleStart);
-    handle.addEventListener('touchstart', handleStart, { passive: false });
+    handle.addEventListener('touchstart', handleStart, { passive: true });
 
+    // Document-level listeners for move and end (only active when dragging)
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('touchmove', handleMove, { passive: false });
 
     document.addEventListener('mouseup', handleEnd);
     document.addEventListener('touchend', handleEnd);
 
-    // Prevent scrolling past content
-    sheetContent.addEventListener('scroll', (e) => {
-        if (sheetContent.scrollTop === 0 && e.deltaY < 0) {
-            // At top, allow drag to work
-        }
-    });
+    // Prevent sheet content clicks from interfering
+    sheetContent.addEventListener('click', (e) => {
+        e.stopPropagation();
+    }, { capture: true });
+
+    sheetContent.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+    }, { capture: true });
 }
 
 function setSheetState(state) {
@@ -304,6 +333,9 @@ function setSheetState(state) {
     sheet.classList.remove('hidden', 'peek', 'half', 'full');
     sheet.classList.add(state);
     sheetState = state;
+
+    // Clear inline transform to let CSS take over
+    sheet.style.transform = '';
 }
 
 // ========================================
