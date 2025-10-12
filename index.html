@@ -2,61 +2,88 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>London Grid Square Explorer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1>London Grid Square Generator</h1>
-            <p class="subtitle">Generate random 1km² OS squares across Greater London</p>
-        </header>
-
-        <button id="randomize-btn" class="randomize-btn">
-            <span class="btn-icon">🎲</span>
-            <span class="btn-text">Generate Random Square</span>
+    <!-- Sticky header -->
+    <header class="app-header">
+        <h1>London Grid Explorer</h1>
+        <button id="randomize-btn" class="randomize-btn" aria-label="Generate random square">
+            <span class="material-symbols-outlined">casino</span>
         </button>
+    </header>
 
-        <div class="content-wrapper hidden" id="content-wrapper">
-            <div id="info" class="info">
-                <div class="info-item">
-                    <label>Grid Reference (1km)</label>
-                    <div class="info-value" id="grid-ref"></div>
-                </div>
-                <div class="info-item">
-                    <label>Coordinates</label>
-                    <div class="info-value" id="location"></div>
-                </div>
-            </div>
+    <!-- Full-screen map -->
+    <div id="map" class="map-container"></div>
 
-            <div id="actions" class="actions">
-                <button id="view-10km-btn" class="action-btn">
-                    <span>📐</span> View 10km Square
-                </button>
-                <a id="google-maps-link" class="action-btn" target="_blank" rel="noopener">
-                    <span>🗺️</span> Open in Google Maps
-                </a>
-            </div>
+    <!-- Empty state (shown before first generation) -->
+    <div id="empty-state" class="empty-state">
+        <div class="empty-content">
+            <span class="material-symbols-outlined empty-icon">location_searching</span>
+            <h2>Explore London by Grid Square</h2>
+            <p>Generate a random 1km² Ordnance Survey square</p>
+            <button class="empty-cta" onclick="document.getElementById('randomize-btn').click()">
+                <span class="material-symbols-outlined">casino</span>
+                Generate First Square
+            </button>
+        </div>
+    </div>
 
-            <div class="map-stations-grid">
-                <div id="map"></div>
-
-                <div id="stations" class="stations-section">
-                    <h3>Nearest Stations</h3>
-                    <div id="stations-content">
-                        <p class="loading">Finding stations...</p>
-                    </div>
-                </div>
-            </div>
+    <!-- Adaptive sheet (bottom sheet on mobile, side panel on desktop) -->
+    <aside id="sheet" class="sheet" aria-label="Square information">
+        <!-- Drag handle for mobile -->
+        <div class="sheet-handle" aria-hidden="true">
+            <div class="handle-bar"></div>
         </div>
 
-        <footer class="footer">
-            <p>Using Ordnance Survey National Grid • 1km squares aligned to OSGB36</p>
-        </footer>
-    </div>
+        <!-- Sheet content -->
+        <div class="sheet-content">
+            <!-- Summary section -->
+            <section class="sheet-section summary-section">
+                <div class="summary-item">
+                    <label>Grid Reference</label>
+                    <div class="summary-value copyable" id="grid-ref" data-copy-value="" tabindex="0" role="button" aria-label="Copy grid reference">
+                        <span class="value-text">—</span>
+                        <span class="material-symbols-outlined copy-icon">content_copy</span>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <label>Coordinates</label>
+                    <div class="summary-value copyable" id="location" data-copy-value="" tabindex="0" role="button" aria-label="Copy coordinates">
+                        <span class="value-text">—</span>
+                        <span class="material-symbols-outlined copy-icon">content_copy</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Actions section -->
+            <section class="sheet-section actions-section">
+                <button id="view-10km-btn" class="action-btn" aria-label="Toggle square size">
+                    <span class="material-symbols-outlined">open_in_full</span>
+                    <span>View 10km Square</span>
+                </button>
+                <a id="google-maps-link" class="action-btn" target="_blank" rel="noopener" aria-label="Open in Google Maps">
+                    <span class="material-symbols-outlined">map</span>
+                    <span>Google Maps</span>
+                </a>
+            </section>
+
+            <!-- Stations section -->
+            <section class="sheet-section stations-section">
+                <h3>Stations</h3>
+                <div id="stations-content" class="stations-list">
+                    <!-- Stations will be populated here -->
+                </div>
+            </section>
+        </div>
+    </aside>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="app.js"></script>

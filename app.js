@@ -1,23 +1,22 @@
-// Ordnance Survey National Grid Reference System
-// Greater London roughly covers TQ grid square (some parts extend to TL and SU)
+// ========================================
+// Ordnance Survey Grid Conversion
+// ========================================
 
-// OS Grid conversion functions
 function osGridToLatLon(easting, northing) {
     // OSGB36 ellipsoid parameters (Airy 1830)
-    const a = 6377563.396;  // semi-major axis
-    const b = 6356256.909;  // semi-minor axis
-    const F0 = 0.9996012717;  // scale factor on central meridian
-    const lat0 = 49 * Math.PI / 180;  // latitude of true origin
-    const lon0 = -2 * Math.PI / 180;  // longitude of true origin
-    const N0 = -100000;  // northing of true origin
-    const E0 = 400000;  // easting of true origin
-    const e2 = 1 - (b * b) / (a * a);  // eccentricity squared
+    const a = 6377563.396;
+    const b = 6356256.909;
+    const F0 = 0.9996012717;
+    const lat0 = 49 * Math.PI / 180;
+    const lon0 = -2 * Math.PI / 180;
+    const N0 = -100000;
+    const E0 = 400000;
+    const e2 = 1 - (b * b) / (a * a);
     const n = (a - b) / (a + b);
 
     let lat = lat0;
     let M = 0;
 
-    // Iterate to find latitude (OSGB36)
     do {
         lat = ((northing - N0 - M) / (a * F0)) + lat;
         const Ma = (1 + n + (5/4)*n*n + (5/4)*n*n*n) * (lat - lat0);
@@ -60,7 +59,6 @@ function osGridToLatLon(easting, northing) {
     lat = lat - VII * dE2 + VIII * dE4 - IX * dE6;
     const lon = lon0 + X * dE - XI * dE3 + XII * dE5 - XIIA * dE7;
 
-    // Convert OSGB36 lat/lon to WGS84 using Helmert transformation
     const latLonWGS84 = osgb36ToWGS84(lat, lon, a, b);
 
     return {
@@ -69,22 +67,18 @@ function osGridToLatLon(easting, northing) {
     };
 }
 
-// Helmert transformation from OSGB36 to WGS84
 function osgb36ToWGS84(latOSGB, lonOSGB, aOSGB, bOSGB) {
-    // WGS84 ellipsoid parameters
     const aWGS = 6378137.000;
     const bWGS = 6356752.3142;
 
-    // Helmert transformation parameters (OSGB36 to WGS84)
-    const tx = 446.448;    // metres
-    const ty = -125.157;   // metres
-    const tz = 542.060;    // metres
-    const s = -20.4894;    // ppm
-    const rx = 0.1502;     // arcseconds
-    const ry = 0.2470;     // arcseconds
-    const rz = 0.8421;     // arcseconds
+    const tx = 446.448;
+    const ty = -125.157;
+    const tz = 542.060;
+    const s = -20.4894;
+    const rx = 0.1502;
+    const ry = 0.2470;
+    const rz = 0.8421;
 
-    // Convert lat/lon to Cartesian coordinates (OSGB36)
     const sinLat = Math.sin(latOSGB);
     const cosLat = Math.cos(latOSGB);
     const sinLon = Math.sin(lonOSGB);
@@ -96,9 +90,8 @@ function osgb36ToWGS84(latOSGB, lonOSGB, aOSGB, bOSGB) {
     const y1 = nu * cosLat * sinLon;
     const z1 = nu * (1 - e2OSGB) * sinLat;
 
-    // Apply Helmert transformation
-    const sc = s * 1e-6 + 1;  // scale factor
-    const rxRad = rx * Math.PI / 648000;  // arcseconds to radians
+    const sc = s * 1e-6 + 1;
+    const rxRad = rx * Math.PI / 648000;
     const ryRad = ry * Math.PI / 648000;
     const rzRad = rz * Math.PI / 648000;
 
@@ -106,12 +99,10 @@ function osgb36ToWGS84(latOSGB, lonOSGB, aOSGB, bOSGB) {
     const y2 = ty + rzRad * x1 + sc * y1 - rxRad * z1;
     const z2 = tz - ryRad * x1 + rxRad * y1 + sc * z1;
 
-    // Convert Cartesian back to lat/lon (WGS84)
     const e2WGS = 1 - (bWGS * bWGS) / (aWGS * aWGS);
     const p = Math.sqrt(x2 * x2 + y2 * y2);
     let latWGS = Math.atan2(z2, p * (1 - e2WGS));
 
-    // Iterate to refine latitude
     for (let i = 0; i < 10; i++) {
         const sinLatWGS = Math.sin(latWGS);
         const nuWGS = aWGS / Math.sqrt(1 - e2WGS * sinLatWGS * sinLatWGS);
@@ -124,135 +115,220 @@ function osgb36ToWGS84(latOSGB, lonOSGB, aOSGB, bOSGB) {
 }
 
 function formatGridRef(easting, northing) {
-    // Get the 100km-grid indices
     const e100km = Math.floor(easting / 100000);
     const n100km = Math.floor(northing / 100000);
 
-    // Translate those into numeric equivalents of the grid letters
-    // Using the official OS algorithm with false origin at SV
     let l1 = (19 - n100km) - (19 - n100km) % 5 + Math.floor((e100km + 10) / 5);
     let l2 = (19 - n100km) * 5 % 25 + e100km % 5;
 
-    // Compensate for skipped 'I'
     if (l1 > 7) l1++;
     if (l2 > 7) l2++;
 
     const letterPair = String.fromCharCode(l1 + 'A'.charCodeAt(0), l2 + 'A'.charCodeAt(0));
 
-    // Get eastings and northings within the 100km square (in km for compact format)
     const e = Math.floor((easting % 100000) / 1000);
     const n = Math.floor((northing % 100000) / 1000);
 
-    // Format as compact reference (e.g., TQ4289)
     const eStr = e.toString().padStart(2, '0');
     const nStr = n.toString().padStart(2, '0');
 
     return `${letterPair}${eStr}${nStr}`;
 }
 
-// Greater London boundaries (approximate, in OS Grid)
-// TQ square covers most of London
-const LONDON_BOUNDS = {
-    minEasting: 503000,   // Western edge
-    maxEasting: 561000,   // Eastern edge
-    minNorthing: 155000,  // Southern edge
-    maxNorthing: 200000   // Northern edge
-};
-
-function getRandomSquare() {
-    // Generate random 1km square within Greater London
-    const easting = Math.floor(Math.random() * (LONDON_BOUNDS.maxEasting - LONDON_BOUNDS.minEasting) / 1000) * 1000 + LONDON_BOUNDS.minEasting;
-    const northing = Math.floor(Math.random() * (LONDON_BOUNDS.maxNorthing - LONDON_BOUNDS.minNorthing) / 1000) * 1000 + LONDON_BOUNDS.minNorthing;
-
-    return { easting, northing };
+function get10kmGridRef(gridRef) {
+    if (gridRef.length >= 4) {
+        return gridRef.substring(0, 2) + gridRef.charAt(2) + gridRef.charAt(4);
+    }
+    return gridRef;
 }
 
-// Map initialization
+// ========================================
+// Constants
+// ========================================
+
+const LONDON_BOUNDS = {
+    minEasting: 503000,
+    maxEasting: 561000,
+    minNorthing: 155000,
+    maxNorthing: 200000
+};
+
+// ========================================
+// State Management
+// ========================================
+
 let map;
-let miniMap;
 let currentMarker;
-let miniMapMarker;
+let stationMarkers = [];
 let currentEasting;
 let currentNorthing;
 let original1kmEasting;
 let original1kmNorthing;
-let currentViewMode = '1km'; // '1km' or '10km'
+let currentViewMode = '1km';
+let stationSearchRequestId = 0;
+let currentStations = [];
+let selectedStationIndex = null;
+
+// Sheet state (mobile)
+let sheetState = 'hidden'; // 'hidden', 'peek', 'half', 'full'
+let isDragging = false;
+let dragStartY = 0;
+let sheetStartY = 0;
+
+// ========================================
+// Initialization
+// ========================================
 
 function initMap() {
-    map = L.map('map').setView([51.5074, -0.1278], 10);
+    map = L.map('map', {
+        zoomControl: true,
+        attributionControl: true
+    }).setView([51.5074, -0.1278], 10);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 19
     }).addTo(map);
 
-    // Create inset minimap
-    createMiniMap();
+    // Delay to ensure map renders correctly
+    setTimeout(() => {
+        map.invalidateSize();
+    }, 100);
 }
 
-function createMiniMap() {
-    // Create minimap container
-    const MiniMapControl = L.Control.extend({
-        options: {
-            position: 'bottomright'
-        },
+function initSheet() {
+    const sheet = document.getElementById('sheet');
+    const handle = document.querySelector('.sheet-handle');
+    const sheetContent = document.querySelector('.sheet-content');
 
-        onAdd: function(map) {
-            const container = L.DomUtil.create('div', 'leaflet-control-minimap');
-            container.style.width = '200px';
-            container.style.height = '150px';
-            container.style.backgroundColor = 'white';
+    // Check if desktop
+    const isDesktop = () => window.innerWidth >= 768;
 
-            // Prevent map interactions from affecting main map
-            L.DomEvent.disableClickPropagation(container);
-            L.DomEvent.disableScrollPropagation(container);
+    // Touch/mouse event handlers
+    function handleStart(e) {
+        if (isDesktop()) return;
 
-            // Initialize minimap
-            miniMap = L.map(container, {
-                zoomControl: false,
-                attributionControl: false,
-                dragging: false,
-                scrollWheelZoom: false,
-                doubleClickZoom: false,
-                boxZoom: false,
-                keyboard: false,
-                tap: false
-            }).setView([51.5074, -0.1278], 10);
+        isDragging = true;
+        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        dragStartY = clientY;
+        sheetStartY = sheet.getBoundingClientRect().top;
+        sheet.style.transition = 'none';
+    }
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19
-            }).addTo(miniMap);
+    function handleMove(e) {
+        if (!isDragging || isDesktop()) return;
 
-            return container;
+        e.preventDefault();
+        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        const deltaY = clientY - dragStartY;
+        const newY = sheetStartY + deltaY;
+
+        const maxY = window.innerHeight;
+        const minY = document.querySelector('.app-header').offsetHeight + 20;
+
+        if (newY >= minY && newY <= maxY) {
+            const translateY = maxY - (maxY - newY);
+            sheet.style.transform = `translateY(${translateY}px)`;
+        }
+    }
+
+    function handleEnd(e) {
+        if (!isDragging || isDesktop()) return;
+
+        isDragging = false;
+        sheet.style.transition = '';
+
+        const clientY = e.type.includes('touch') ? e.changedTouches[0].clientY : e.clientY;
+        const deltaY = clientY - dragStartY;
+        const velocity = deltaY;
+
+        // Determine next state based on velocity and position
+        const currentTranslate = sheet.getBoundingClientRect().top;
+        const windowHeight = window.innerHeight;
+        const headerHeight = document.querySelector('.app-header').offsetHeight;
+
+        let newState;
+
+        if (velocity > 50) {
+            // Dragging down
+            if (sheetState === 'full') newState = 'half';
+            else if (sheetState === 'half') newState = 'peek';
+            else newState = 'peek';
+        } else if (velocity < -50) {
+            // Dragging up
+            if (sheetState === 'peek') newState = 'half';
+            else if (sheetState === 'half') newState = 'full';
+            else newState = 'full';
+        } else {
+            // Snap to nearest
+            const peekY = windowHeight - 180;
+            const halfY = windowHeight / 2;
+            const fullY = headerHeight + 20;
+
+            const distToPeek = Math.abs(currentTranslate - peekY);
+            const distToHalf = Math.abs(currentTranslate - halfY);
+            const distToFull = Math.abs(currentTranslate - fullY);
+
+            if (distToPeek < distToHalf && distToPeek < distToFull) {
+                newState = 'peek';
+            } else if (distToHalf < distToFull) {
+                newState = 'half';
+            } else {
+                newState = 'full';
+            }
+        }
+
+        setSheetState(newState);
+    }
+
+    // Event listeners
+    handle.addEventListener('mousedown', handleStart);
+    handle.addEventListener('touchstart', handleStart, { passive: false });
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('touchmove', handleMove, { passive: false });
+
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchend', handleEnd);
+
+    // Prevent scrolling past content
+    sheetContent.addEventListener('scroll', (e) => {
+        if (sheetContent.scrollTop === 0 && e.deltaY < 0) {
+            // At top, allow drag to work
         }
     });
-
-    map.addControl(new MiniMapControl());
 }
 
-function showSquareOnMap(easting, northing, squareSize = 1000) {
+function setSheetState(state) {
+    const sheet = document.getElementById('sheet');
+    sheet.classList.remove('hidden', 'peek', 'half', 'full');
+    sheet.classList.add(state);
+    sheetState = state;
+}
+
+// ========================================
+// UI Updates
+// ========================================
+
+function showSquare(easting, northing, squareSize = 1000) {
     currentEasting = easting;
     currentNorthing = northing;
     currentViewMode = squareSize === 1000 ? '1km' : '10km';
 
-    // Store original 1km coordinates when first showing
     if (squareSize === 1000) {
         original1kmEasting = easting;
         original1kmNorthing = northing;
     }
 
     const center = osGridToLatLon(easting + squareSize / 2, northing + squareSize / 2);
-    const gridRef = formatGridRef(easting, northing);
+    const gridRef = squareSize === 1000 ? formatGridRef(easting, northing) : get10kmGridRef(formatGridRef(easting, northing));
 
-    // Remove previous marker if exists
+    // Remove previous marker
     if (currentMarker) {
         map.removeLayer(currentMarker);
     }
-    if (miniMapMarker) {
-        miniMap.removeLayer(miniMapMarker);
-    }
 
-    // Draw square on main map
+    // Draw square on map
     const sw = osGridToLatLon(easting, northing);
     const ne = osGridToLatLon(easting + squareSize, northing + squareSize);
     const nw = osGridToLatLon(easting, northing + squareSize);
@@ -266,98 +342,124 @@ function showSquareOnMap(easting, northing, squareSize = 1000) {
     ], {
         color: '#111827',
         fillColor: '#111827',
-        fillOpacity: 0.2,
+        fillOpacity: 0.15,
         weight: 2
     }).addTo(map);
 
     currentMarker = square;
 
-    // Show marker on minimap
-    const miniSquare = L.polygon([
-        [sw.lat, sw.lon],
-        [se.lat, se.lon],
-        [ne.lat, ne.lon],
-        [nw.lat, nw.lon]
-    ], {
-        color: '#dc2626',
-        fillColor: '#dc2626',
-        fillOpacity: 0.5,
-        weight: 2
-    }).addTo(miniMap);
+    // Update sheet content
+    document.querySelector('#grid-ref .value-text').textContent = gridRef;
+    document.querySelector('#grid-ref').setAttribute('data-copy-value', gridRef);
 
-    miniMapMarker = miniSquare;
-
-    // Update info display
-    const gridRefDisplay = squareSize === 1000 ? gridRef : get10kmGridRef(gridRef);
-    const gridRefLabel = document.querySelector('.info-item label');
-    gridRefLabel.textContent = squareSize === 1000 ? 'Grid Reference (1km)' : 'Grid Reference (10km)';
-    document.getElementById('grid-ref').textContent = gridRefDisplay;
-    document.getElementById('location').textContent = `${center.lat.toFixed(5)}°N, ${Math.abs(center.lon).toFixed(5)}°W`;
-    document.getElementById('content-wrapper').classList.remove('hidden');
-
-    // Fix map rendering after showing container
-    setTimeout(() => {
-        map.invalidateSize();
-        if (miniMap) {
-            miniMap.invalidateSize();
-            // Fit minimap to London bounds
-            const londonSW = osGridToLatLon(LONDON_BOUNDS.minEasting, LONDON_BOUNDS.minNorthing);
-            const londonNE = osGridToLatLon(LONDON_BOUNDS.maxEasting, LONDON_BOUNDS.maxNorthing);
-            miniMap.fitBounds([[londonSW.lat, londonSW.lon], [londonNE.lat, londonNE.lon]], { padding: [10, 10] });
-        }
-        // Re-fit main map bounds after invalidation
-        if (currentMarker) {
-            map.fitBounds(currentMarker.getBounds(), { padding: [50, 50] });
-        }
-    }, 200);
+    const coordText = `${center.lat.toFixed(5)}°N, ${Math.abs(center.lon).toFixed(5)}°W`;
+    document.querySelector('#location .value-text').textContent = coordText;
+    document.querySelector('#location').setAttribute('data-copy-value', coordText);
 
     // Update Google Maps link
     const googleMapsLink = `https://www.google.com/maps?q=${center.lat},${center.lon}`;
     document.getElementById('google-maps-link').href = googleMapsLink;
 
-    // Update 10km button text
+    // Update 10km button
     const view10kmBtn = document.getElementById('view-10km-btn');
+    const btnIcon = view10kmBtn.querySelector('.material-symbols-outlined');
+    const btnText = view10kmBtn.querySelector('span:last-child');
+
     if (squareSize === 1000) {
-        view10kmBtn.innerHTML = '<span>📐</span> View 10km Square';
+        btnIcon.textContent = 'open_in_full';
+        btnText.textContent = 'View 10km Square';
     } else {
-        view10kmBtn.innerHTML = '<span>🔍</span> View 1km Square';
+        btnIcon.textContent = 'close_fullscreen';
+        btnText.textContent = 'View 1km Square';
     }
 
-    // Find nearby stations
+    // Show sheet if hidden
+    if (sheetState === 'hidden') {
+        setSheetState('peek');
+    }
+
+    // Hide empty state
+    document.getElementById('empty-state').classList.add('hidden');
+
+    // Fit map to bounds
+    setTimeout(() => {
+        map.invalidateSize();
+        map.fitBounds(square.getBounds(), { padding: [50, 50] });
+    }, 100);
+
+    // Show toast
+    showToast(`Generated ${gridRef}`);
+
+    // Find stations
     findNearbyStations(easting, northing, squareSize);
 }
 
-function get10kmGridRef(gridRef) {
-    // Extract 10km square from grid ref (e.g., TQ5075 -> TQ57)
-    if (gridRef.length >= 4) {
-        return gridRef.substring(0, 2) + gridRef.charAt(2) + gridRef.charAt(4);
-    }
-    return gridRef;
+function getRandomSquare() {
+    const easting = Math.floor(Math.random() * (LONDON_BOUNDS.maxEasting - LONDON_BOUNDS.minEasting) / 1000) * 1000 + LONDON_BOUNDS.minEasting;
+    const northing = Math.floor(Math.random() * (LONDON_BOUNDS.maxNorthing - LONDON_BOUNDS.minNorthing) / 1000) * 1000 + LONDON_BOUNDS.minNorthing;
+    return { easting, northing };
 }
 
-// Fetch nearby stations using Overpass API
-async function findNearbyStations(easting, northing, squareSize) {
-    const stationsContent = document.getElementById('stations-content');
+// ========================================
+// Station Search
+// ========================================
 
-    // Show loading state
-    stationsContent.innerHTML = '<p class="loading">Finding stations...</p>';
+async function fetchOverpassWithRetry(query, thisRequestId, stationsContent, retryCount = 0) {
+    const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: query
+    });
+
+    console.log(`[Station Search #${thisRequestId}] Response status: ${response.status} ${response.statusText}`);
+
+    if ((response.status === 504 || response.status === 429) && retryCount === 0) {
+        const delayMs = response.status === 429 ? 3000 : 2000;
+        const delaySec = delayMs / 1000;
+        const errorType = response.status === 429 ? 'Rate limited' : 'Server timeout';
+
+        console.log(`[Station Search #${thisRequestId}] ${errorType}, waiting ${delaySec}s before retry`);
+        stationsContent.innerHTML = `<p class="loading">${errorType}, retrying in ${delaySec}s<span class="loading-dots"></span></p>`;
+
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+
+        stationsContent.innerHTML = '<p class="loading">Retrying search<span class="loading-dots"></span></p>';
+        return fetchOverpassWithRetry(query, thisRequestId, stationsContent, retryCount + 1);
+    }
+
+    if (!response.ok) {
+        throw new Error(`Overpass API returned ${response.status}: ${response.statusText}`);
+    }
+
+    return response.json();
+}
+
+async function findNearbyStations(easting, northing, squareSize) {
+    stationSearchRequestId++;
+    const thisRequestId = stationSearchRequestId;
+    console.log(`[Station Search #${thisRequestId}] Starting search for square at E${easting} N${northing}`);
+
+    const stationsContent = document.getElementById('stations-content');
+    stationsContent.innerHTML = '<p class="loading">Finding stations<span class="loading-dots"></span></p>';
+
+    // Clear existing station markers
+    stationMarkers.forEach(marker => map.removeLayer(marker));
+    stationMarkers = [];
+    currentStations = [];
+    selectedStationIndex = null;
 
     try {
-        // Convert grid square corners to lat/lon
         const sw = osGridToLatLon(easting, northing);
         const ne = osGridToLatLon(easting + squareSize, northing + squareSize);
         const nw = osGridToLatLon(easting, northing + squareSize);
         const se = osGridToLatLon(easting + squareSize, northing);
         const center = osGridToLatLon(easting + squareSize / 2, northing + squareSize / 2);
 
-        // Create bounding box with buffer (search slightly outside the square)
-        let buffer = 0.02; // ~2km buffer
+        let buffer = 0.02;
         const south = Math.min(sw.lat, ne.lat) - buffer;
         const north = Math.max(sw.lat, ne.lat) + buffer;
         const west = Math.min(sw.lon, ne.lon) - buffer;
         const east = Math.max(sw.lon, ne.lon) + buffer;
 
-        // Overpass API query for railway stations only (not entrances)
         const query = `
             [out:json][timeout:25];
             (
@@ -367,29 +469,20 @@ async function findNearbyStations(easting, northing, squareSize) {
             out body;
         `;
 
-        const response = await fetch('https://overpass-api.de/api/interpreter', {
-            method: 'POST',
-            body: query
-        });
+        console.log(`[Station Search #${thisRequestId}] Sending Overpass query`);
+        const data = await fetchOverpassWithRetry(query, thisRequestId, stationsContent);
+        console.log(`[Station Search #${thisRequestId}] Found ${data.elements?.length || 0} stations in initial search`);
 
-        const data = await response.json();
-
-        // Calculate distances and sort
         const stations = data.elements.map(station => {
-            // Calculate distance to edge of square
             const distance = distanceToSquareEdge(station.lat, station.lon, sw, ne, nw, se);
-
-            // Determine if station is inside the square
             const insideSquare = distance === 0;
-
-            // Get line or operator info
             const line = station.tags.line || station.tags['line:name'] || null;
             const operator = station.tags.operator || null;
 
             return {
                 name: station.tags.name || 'Unnamed station',
                 type: getStationType(station.tags),
-                line: line,
+                line: formatLineName(line),
                 operator: operator,
                 distance: distance,
                 inside: insideSquare,
@@ -398,14 +491,15 @@ async function findNearbyStations(easting, northing, squareSize) {
             };
         }).filter(s => s.name !== 'Unnamed station')
           .sort((a, b) => {
-              // Prioritize stations inside the square
               if (a.inside && !b.inside) return -1;
               if (!a.inside && b.inside) return 1;
               return a.distance - b.distance;
           });
 
-        // If no stations found, expand search to find at least one
         if (stations.length === 0) {
+            console.log(`[Station Search #${thisRequestId}] No stations found, expanding search`);
+            stationsContent.innerHTML = '<p class="loading">No nearby stations, searching wider area<span class="loading-dots"></span></p>';
+
             const widerQuery = `
                 [out:json][timeout:25];
                 (
@@ -415,12 +509,8 @@ async function findNearbyStations(easting, northing, squareSize) {
                 out body;
             `;
 
-            const widerResponse = await fetch('https://overpass-api.de/api/interpreter', {
-                method: 'POST',
-                body: widerQuery
-            });
-
-            const widerData = await widerResponse.json();
+            const widerData = await fetchOverpassWithRetry(widerQuery, thisRequestId, stationsContent);
+            console.log(`[Station Search #${thisRequestId}] Found ${widerData.elements?.length || 0} stations in wider search`);
 
             const allStations = widerData.elements.map(station => {
                 const distance = distanceToSquareEdge(station.lat, station.lon, sw, ne, nw, se);
@@ -430,7 +520,7 @@ async function findNearbyStations(easting, northing, squareSize) {
                 return {
                     name: station.tags.name || 'Unnamed station',
                     type: getStationType(station.tags),
-                    line: line,
+                    line: formatLineName(line),
                     operator: operator,
                     distance: distance,
                     inside: false,
@@ -440,117 +530,181 @@ async function findNearbyStations(easting, northing, squareSize) {
             }).filter(s => s.name !== 'Unnamed station')
               .sort((a, b) => a.distance - b.distance);
 
-            // Take just the closest one
             stations.push(...allStations.slice(0, 1));
         }
 
-        // Display stations
-        if (stations.length === 0) {
-            stationsContent.innerHTML = '<p class="no-stations">No stations found nearby</p>';
-        } else {
-            const insideStations = stations.filter(s => s.inside);
-            const outsideStations = stations.filter(s => !s.inside).slice(0, 5);
-
-            let html = '';
-
-            if (insideStations.length > 0) {
-                if (outsideStations.length > 0) {
-                    // Only show heading if there are also outside stations
-                    html += '<div style="font-size: 0.75rem; color: #6b7280; font-weight: 600; margin-bottom: 0.5rem;">In Square</div>';
-                }
-                html += insideStations.map(s => {
-                    const meta = s.line || s.operator || '';
-                    return `
-                        <div class="station-item">
-                            ${getStationIcon(s.type)}
-                            <div class="station-info">
-                                <div class="station-name">${s.name}</div>
-                                ${meta ? `<div class="station-meta">${meta}</div>` : ''}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            if (outsideStations.length > 0) {
-                if (insideStations.length > 0) {
-                    html += '<div style="margin: 0.75rem 0 0.5rem 0; padding-top: 0.75rem; border-top: 1px solid #e5e7eb; font-size: 0.75rem; color: #6b7280; font-weight: 600;">Nearby</div>';
-                }
-                html += outsideStations.map(s => {
-                    const meta = s.line || s.operator || '';
-                    const distanceText = formatDistance(s.distance);
-                    return `
-                        <div class="station-item">
-                            ${getStationIcon(s.type)}
-                            <div class="station-info">
-                                <div class="station-name">${s.name}</div>
-                                ${meta ? `<div class="station-meta">${meta}</div>` : ''}
-                            </div>
-                            <div class="station-distance">${distanceText}</div>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            stationsContent.innerHTML = html;
+        // Check if still latest request
+        if (thisRequestId !== stationSearchRequestId) {
+            console.log(`[Station Search #${thisRequestId}] Discarding results - newer request made`);
+            return;
         }
+
+        currentStations = stations;
+        displayStations(stations);
+        addStationMarkers(stations);
+
     } catch (error) {
-        console.error('Error fetching stations:', error);
+        console.error(`[Station Search #${thisRequestId}] Error:`, error);
+
+        if (thisRequestId !== stationSearchRequestId) {
+            return;
+        }
+
         stationsContent.innerHTML = '<p class="no-stations">Error loading stations</p>';
     }
 }
 
-// Calculate distance between two lat/lon points (in km)
+function displayStations(stations) {
+    const stationsContent = document.getElementById('stations-content');
+
+    if (stations.length === 0) {
+        stationsContent.innerHTML = '<p class="no-stations">No stations found nearby</p>';
+        return;
+    }
+
+    const insideStations = stations.filter(s => s.inside);
+    const outsideStations = stations.filter(s => !s.inside).slice(0, 5);
+
+    let html = '';
+
+    if (insideStations.length > 0) {
+        if (outsideStations.length > 0) {
+            html += '<div class="station-group-header">In Square</div>';
+        }
+        html += insideStations.map((s, idx) => renderStationItem(s, stations.indexOf(s))).join('');
+    }
+
+    if (outsideStations.length > 0) {
+        if (insideStations.length > 0) {
+            html += '<div class="station-group-header">Nearby</div>';
+        }
+        html += outsideStations.map((s, idx) => renderStationItem(s, stations.indexOf(s))).join('');
+    }
+
+    stationsContent.innerHTML = html;
+
+    // Add click listeners
+    document.querySelectorAll('.station-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const index = parseInt(item.getAttribute('data-index'));
+            selectStation(index);
+        });
+    });
+}
+
+function renderStationItem(station, index) {
+    const meta = station.line || station.operator || '';
+    const distanceText = station.distance > 0 ? formatDistance(station.distance) : '';
+
+    return `
+        <div class="station-item" data-index="${index}">
+            ${getStationIcon(station.type)}
+            <div class="station-info">
+                <div class="station-name">${station.name}</div>
+                ${meta ? `<div class="station-meta">${meta}</div>` : ''}
+            </div>
+            ${distanceText ? `<div class="station-distance">${distanceText}</div>` : ''}
+        </div>
+    `;
+}
+
+function addStationMarkers(stations) {
+    stationMarkers.forEach(marker => map.removeLayer(marker));
+    stationMarkers = [];
+
+    stations.forEach((station, index) => {
+        const iconHtml = getStationMarkerIcon(station.type);
+        const icon = L.divIcon({
+            html: iconHtml,
+            className: 'station-marker',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        const marker = L.marker([station.lat, station.lon], { icon })
+            .addTo(map)
+            .on('click', () => selectStation(index));
+
+        stationMarkers.push(marker);
+    });
+}
+
+function selectStation(index) {
+    selectedStationIndex = index;
+    const station = currentStations[index];
+
+    // Update UI selection
+    document.querySelectorAll('.station-item').forEach((item, idx) => {
+        if (idx === index) {
+            item.classList.add('selected');
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+
+    // Center map on station
+    map.panTo([station.lat, station.lon]);
+
+    // Expand sheet on mobile
+    if (window.innerWidth < 768 && sheetState === 'peek') {
+        setSheetState('half');
+    }
+}
+
+function getStationMarkerIcon(type) {
+    const colors = {
+        'Underground': '#dc2626',
+        'Train': '#3b82f6',
+        'Light Rail': '#059669'
+    };
+    const color = colors[type] || '#3b82f6';
+
+    return `
+        <div style="
+            width: 24px;
+            height: 24px;
+            background: ${color};
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></div>
+    `;
+}
+
+// ========================================
+// Helper Functions
+// ========================================
+
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
               Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
               Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = R * c;
-
-    return distance;
+    return R * c;
 }
 
-// Calculate distance from a point to the edge of a square
 function distanceToSquareEdge(pointLat, pointLon, sw, ne, nw, se) {
-    // Check if point is inside the square
     const inside = pointLat >= Math.min(sw.lat, ne.lat) &&
                    pointLat <= Math.max(sw.lat, ne.lat) &&
                    pointLon >= Math.min(sw.lon, ne.lon) &&
                    pointLon <= Math.max(sw.lon, ne.lon);
 
-    if (inside) {
-        return 0; // Point is inside the square
-    }
+    if (inside) return 0;
 
-    // Calculate distance to each edge
-    const distances = [];
-
-    // Distance to south edge (sw to se)
-    const southDist = distanceToLineSegment(pointLat, pointLon, sw.lat, sw.lon, se.lat, se.lon);
-    distances.push(southDist);
-
-    // Distance to north edge (nw to ne)
-    const northDist = distanceToLineSegment(pointLat, pointLon, nw.lat, nw.lon, ne.lat, ne.lon);
-    distances.push(northDist);
-
-    // Distance to west edge (sw to nw)
-    const westDist = distanceToLineSegment(pointLat, pointLon, sw.lat, sw.lon, nw.lat, nw.lon);
-    distances.push(westDist);
-
-    // Distance to east edge (se to ne)
-    const eastDist = distanceToLineSegment(pointLat, pointLon, se.lat, se.lon, ne.lat, ne.lon);
-    distances.push(eastDist);
+    const distances = [
+        distanceToLineSegment(pointLat, pointLon, sw.lat, sw.lon, se.lat, se.lon),
+        distanceToLineSegment(pointLat, pointLon, nw.lat, nw.lon, ne.lat, ne.lon),
+        distanceToLineSegment(pointLat, pointLon, sw.lat, sw.lon, nw.lat, nw.lon),
+        distanceToLineSegment(pointLat, pointLon, se.lat, se.lon, ne.lat, ne.lon)
+    ];
 
     return Math.min(...distances);
 }
 
-// Calculate distance from point to line segment
 function distanceToLineSegment(pointLat, pointLon, lat1, lon1, lat2, lon2) {
-    // Convert to approximate cartesian (works for small distances)
     const px = pointLon;
     const py = pointLat;
     const x1 = lon1;
@@ -565,11 +719,7 @@ function distanceToLineSegment(pointLat, pointLon, lat1, lon1, lat2, lon2) {
 
     const dot = A * C + B * D;
     const lenSq = C * C + D * D;
-    let param = -1;
-
-    if (lenSq !== 0) {
-        param = dot / lenSq;
-    }
+    let param = lenSq !== 0 ? dot / lenSq : -1;
 
     let xx, yy;
 
@@ -587,19 +737,28 @@ function distanceToLineSegment(pointLat, pointLon, lat1, lon1, lat2, lon2) {
     return calculateDistance(pointLat, pointLon, yy, xx);
 }
 
-// Format distance for display
 function formatDistance(distanceKm) {
     if (distanceKm < 1) {
-        // Show in metres for distances less than 1km
-        const metres = Math.round(distanceKm * 1000);
-        return `${metres} m`;
-    } else {
-        // Show in km with one decimal place
-        return `${distanceKm.toFixed(1)} km`;
+        return `${Math.round(distanceKm * 1000)} m`;
     }
+    return `${distanceKm.toFixed(1)} km`;
 }
 
-// Get station type from tags
+function formatLineName(line) {
+    if (!line) return null;
+
+    const lines = line.split(';')
+        .map(l => l.trim())
+        .filter(l => l.length > 0)
+        .map(l => {
+            return l.split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+        });
+
+    return lines.join(', ');
+}
+
 function getStationType(tags) {
     if (tags.station === 'subway') return 'Underground';
     if (tags.station === 'light_rail') return 'Light Rail';
@@ -608,7 +767,6 @@ function getStationType(tags) {
     return 'Train';
 }
 
-// Get icon for station type (Material Icons)
 function getStationIcon(type) {
     const icons = {
         'Underground': '<span class="material-symbols-outlined station-icon underground">subway</span>',
@@ -618,23 +776,90 @@ function getStationIcon(type) {
     return icons[type] || '<span class="material-symbols-outlined station-icon train">train</span>';
 }
 
-// Event listeners
+// ========================================
+// Copy to Clipboard
+// ========================================
+
+function setupCopyHandlers() {
+    document.querySelectorAll('.copyable').forEach(element => {
+        element.addEventListener('click', () => {
+            const value = element.getAttribute('data-copy-value');
+            copyToClipboard(value);
+            element.classList.add('copied');
+            setTimeout(() => element.classList.remove('copied'), 300);
+            showToast('Copied!');
+        });
+
+        element.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                element.click();
+            }
+        });
+    });
+}
+
+function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+    } else {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+    }
+}
+
+// ========================================
+// Toast Notifications
+// ========================================
+
+function showToast(message) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add('toast-out');
+        setTimeout(() => {
+            container.removeChild(toast);
+        }, 200);
+    }, 2000);
+}
+
+// ========================================
+// Event Listeners
+// ========================================
+
 document.getElementById('randomize-btn').addEventListener('click', () => {
     const { easting, northing } = getRandomSquare();
-    showSquareOnMap(easting, northing, 1000);
+    showSquare(easting, northing, 1000);
 });
 
 document.getElementById('view-10km-btn').addEventListener('click', () => {
     if (currentViewMode === '1km') {
-        // Switch to 10km view - round down to nearest 10km
         const easting10km = Math.floor(original1kmEasting / 10000) * 10000;
         const northing10km = Math.floor(original1kmNorthing / 10000) * 10000;
-        showSquareOnMap(easting10km, northing10km, 10000);
+        showSquare(easting10km, northing10km, 10000);
     } else {
-        // Switch back to original 1km view
-        showSquareOnMap(original1kmEasting, original1kmNorthing, 1000);
+        showSquare(original1kmEasting, original1kmNorthing, 1000);
     }
 });
 
-// Initialize map on load
-window.addEventListener('load', initMap);
+// ========================================
+// Initialize on Load
+// ========================================
+
+window.addEventListener('load', () => {
+    initMap();
+    initSheet();
+    setupCopyHandlers();
+});
