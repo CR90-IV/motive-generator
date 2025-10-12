@@ -695,12 +695,9 @@ async function findNearbyPOIs(easting, northing, squareSize) {
             (
                 node["leisure"="park"]["name"](${south},${west},${north},${east});
                 way["leisure"="park"]["name"](${south},${west},${north},${east});
-                node["amenity"="pub"]["name"](${south},${west},${north},${east});
                 node["tourism"="museum"]["name"](${south},${west},${north},${east});
                 way["tourism"="museum"]["name"](${south},${west},${north},${east});
                 node["historic"~"memorial|monument"]["name"](${south},${west},${north},${east});
-                node["amenity"="place_of_worship"]["name"](${south},${west},${north},${east});
-                way["amenity"="place_of_worship"]["name"](${south},${west},${north},${east});
                 node["amenity"="library"]["name"](${south},${west},${north},${east});
                 node["amenity"="theatre"]["name"](${south},${west},${north},${east});
                 node["amenity"="cinema"]["name"](${south},${west},${north},${east});
@@ -856,11 +853,9 @@ function selectPOI(index) {
 
 function getPOIType(tags) {
     if (tags.leisure === 'park') return 'Park';
-    if (tags.amenity === 'pub') return 'Pub';
     if (tags.tourism === 'museum') return 'Museum';
     if (tags.historic === 'memorial') return 'Memorial';
     if (tags.historic === 'monument') return 'Monument';
-    if (tags.amenity === 'place_of_worship') return 'Place of Worship';
     if (tags.amenity === 'library') return 'Library';
     if (tags.amenity === 'theatre') return 'Theatre';
     if (tags.amenity === 'cinema') return 'Cinema';
@@ -872,15 +867,13 @@ function getPOIType(tags) {
 function getPOIIcon(type) {
     const icons = {
         'Park': '<span class="material-symbols-outlined station-icon" style="color: #059669;">park</span>',
-        'Pub': '<span class="material-symbols-outlined station-icon" style="color: #f59e0b;">local_bar</span>',
         'Museum': '<span class="material-symbols-outlined station-icon" style="color: #8b5cf6;">museum</span>',
-        'Memorial': '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">monument</span>',
-        'Monument': '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">monument</span>',
-        'Place of Worship': '<span class="material-symbols-outlined station-icon" style="color: #7c3aed;">church</span>',
+        'Memorial': '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">chess_rook</span>',
+        'Monument': '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">chess_rook</span>',
         'Library': '<span class="material-symbols-outlined station-icon" style="color: #0891b2;">local_library</span>',
         'Theatre': '<span class="material-symbols-outlined station-icon" style="color: #ec4899;">theater_comedy</span>',
         'Cinema': '<span class="material-symbols-outlined station-icon" style="color: #dc2626;">local_movies</span>',
-        'Attraction': '<span class="material-symbols-outlined station-icon" style="color: #f59e0b;">star</span>',
+        'Attraction': '<span class="material-symbols-outlined station-icon" style="color: #f59e0b;">attractions</span>',
         'Viewpoint': '<span class="material-symbols-outlined station-icon" style="color: #3b82f6;">visibility</span>',
     };
     return icons[type] || '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">place</span>';
@@ -889,11 +882,9 @@ function getPOIIcon(type) {
 function getPOIMarkerIcon(type) {
     const colors = {
         'Park': '#059669',
-        'Pub': '#f59e0b',
         'Museum': '#8b5cf6',
         'Memorial': '#6b7280',
         'Monument': '#6b7280',
-        'Place of Worship': '#7c3aed',
         'Library': '#0891b2',
         'Theatre': '#ec4899',
         'Cinema': '#dc2626',
