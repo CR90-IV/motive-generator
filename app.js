@@ -142,6 +142,59 @@ function get10kmGridRef(gridRef) {
     return gridRef;
 }
 
+function parseGridRef(gridRef) {
+    // Remove spaces and convert to uppercase
+    gridRef = gridRef.replace(/\s/g, '').toUpperCase();
+
+    // Validate format (2 letters + even number of digits)
+    if (!/^[A-Z]{2}\d+$/.test(gridRef)) {
+        return null;
+    }
+
+    const letters = gridRef.substring(0, 2);
+    const numbers = gridRef.substring(2);
+
+    // Must have even number of digits
+    if (numbers.length % 2 !== 0) {
+        return null;
+    }
+
+    // Get the 100km square indices
+    const l1 = letters.charCodeAt(0) - 'A'.charCodeAt(0);
+    const l2 = letters.charCodeAt(1) - 'A'.charCodeAt(0);
+
+    // Compensate for skipped 'I'
+    const l1Adjusted = l1 > 7 ? l1 - 1 : l1;
+    const l2Adjusted = l2 > 7 ? l2 - 1 : l2;
+
+    // Calculate 100km square origin
+    const e100km = ((l1Adjusted - 2) % 5) * 5 + (l2Adjusted % 5);
+    const n100km = (19 - Math.floor(l1Adjusted / 5) * 5) - Math.floor(l2Adjusted / 5);
+
+    // Parse the numeric part
+    const halfLength = numbers.length / 2;
+    const eStr = numbers.substring(0, halfLength);
+    const nStr = numbers.substring(halfLength);
+
+    // Calculate multiplier based on precision
+    const multiplier = Math.pow(10, 5 - halfLength);
+
+    const e = parseInt(eStr) * multiplier;
+    const n = parseInt(nStr) * multiplier;
+
+    const easting = e100km * 100000 + e;
+    const northing = n100km * 100000 + n;
+
+    // Validate it's within bounds
+    if (easting < 0 || easting > 700000 || northing < 0 || northing > 1300000) {
+        return null;
+    }
+
+    // Return with the precision (1km = 1000m)
+    const precision = multiplier;
+    return { easting, northing, precision };
+}
+
 // ========================================
 // Constants
 // ========================================
@@ -166,14 +219,15 @@ let original1kmEasting;
 let original1kmNorthing;
 let currentViewMode = '1km';
 let stationSearchRequestId = 0;
+let poiSearchRequestId = 0;
 let currentStations = [];
+let currentPOIs = [];
 let selectedStationIndex = null;
+let selectedPOIIndex = null;
+let poiMarkers = [];
 
 // Sheet state (mobile)
-let sheetState = 'hidden'; // 'hidden', 'peek', 'half', 'full'
-let isDragging = false;
-let dragStartY = 0;
-let sheetStartY = 0;
+let sheetState = 'hidden'; // 'hidden', 'peek', 'full'
 
 // ========================================
 // Initialization
@@ -197,145 +251,25 @@ function initMap() {
 }
 
 function initSheet() {
-    const sheet = document.getElementById('sheet');
-    const handle = document.querySelector('.sheet-handle');
-    const sheetContent = document.querySelector('.sheet-content');
+    const toggleBtn = document.getElementById('sheet-toggle');
 
-    // Check if desktop
-    const isDesktop = () => window.innerWidth >= 768;
-
-    let startTime = 0;
-
-    // Touch/mouse event handlers
-    function handleStart(e) {
-        if (isDesktop()) return;
-
-        isDragging = true;
-        startTime = Date.now();
-        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        dragStartY = clientY;
-        sheetStartY = sheet.getBoundingClientRect().top;
-        sheet.style.transition = 'none';
-    }
-
-    function handleMove(e) {
-        if (!isDragging || isDesktop()) return;
-
-        const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        const deltaY = clientY - dragStartY;
-
-        // Only start dragging if moved more than 5px (prevents interference with clicks)
-        if (Math.abs(deltaY) < 5) return;
-
-        e.preventDefault();
-
-        // Calculate the new position
-        const windowHeight = window.innerHeight;
-        const currentBottom = windowHeight - sheetStartY;
-        const newBottom = currentBottom - deltaY;
-
-        // Constrain between peek height and full height
-        const minBottom = 180; // peek height
-        const maxBottom = windowHeight - document.querySelector('.app-header').offsetHeight - 20;
-        const constrainedBottom = Math.max(minBottom, Math.min(maxBottom, newBottom));
-
-        // Set transform based on how far from bottom
-        const translateY = windowHeight - constrainedBottom;
-        sheet.style.transform = `translateY(${translateY}px)`;
-    }
-
-    function handleEnd(e) {
-        if (!isDragging || isDesktop()) return;
-
-        const endTime = Date.now();
-        const timeDiff = endTime - startTime;
-
-        isDragging = false;
-
-        const clientY = e.type.includes('touch') ? e.changedTouches[0].clientY : e.clientY;
-        const deltaY = clientY - dragStartY;
-
-        // If it was a quick tap (< 200ms) and small movement (< 5px), ignore
-        if (timeDiff < 200 && Math.abs(deltaY) < 5) {
-            // Reset to current state without changing
-            setSheetState(sheetState);
-            return;
+    // Toggle button click handler
+    toggleBtn.addEventListener('click', () => {
+        if (sheetState === 'peek') {
+            setSheetState('full');
+            toggleBtn.setAttribute('aria-label', 'Collapse sheet');
+        } else if (sheetState === 'full') {
+            setSheetState('peek');
+            toggleBtn.setAttribute('aria-label', 'Expand sheet');
         }
-
-        // Calculate velocity (pixels per second)
-        const velocity = deltaY / (timeDiff / 1000);
-
-        // Get current position
-        const currentTop = sheet.getBoundingClientRect().top;
-        const windowHeight = window.innerHeight;
-        const headerHeight = document.querySelector('.app-header').offsetHeight;
-
-        let newState;
-
-        // Fast swipe - change state based on direction
-        if (Math.abs(velocity) > 500) {
-            if (velocity > 0) {
-                // Fast swipe down
-                if (sheetState === 'full') newState = 'half';
-                else if (sheetState === 'half') newState = 'peek';
-                else newState = 'peek';
-            } else {
-                // Fast swipe up
-                if (sheetState === 'peek') newState = 'half';
-                else if (sheetState === 'half') newState = 'full';
-                else newState = 'full';
-            }
-        } else {
-            // Slow drag - snap to nearest state
-            const peekTop = windowHeight - 180;
-            const halfTop = windowHeight / 2;
-            const fullTop = headerHeight + 20;
-
-            const distToPeek = Math.abs(currentTop - peekTop);
-            const distToHalf = Math.abs(currentTop - halfTop);
-            const distToFull = Math.abs(currentTop - fullTop);
-
-            if (distToPeek <= distToHalf && distToPeek <= distToFull) {
-                newState = 'peek';
-            } else if (distToHalf <= distToFull) {
-                newState = 'half';
-            } else {
-                newState = 'full';
-            }
-        }
-
-        setSheetState(newState);
-    }
-
-    // Event listeners - only on handle
-    handle.addEventListener('mousedown', handleStart);
-    handle.addEventListener('touchstart', handleStart, { passive: true });
-
-    // Document-level listeners for move and end (only active when dragging)
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('touchmove', handleMove, { passive: false });
-
-    document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchend', handleEnd);
-
-    // Prevent sheet content clicks from interfering
-    sheetContent.addEventListener('click', (e) => {
-        e.stopPropagation();
-    }, { capture: true });
-
-    sheetContent.addEventListener('touchstart', (e) => {
-        e.stopPropagation();
-    }, { capture: true });
+    });
 }
 
 function setSheetState(state) {
     const sheet = document.getElementById('sheet');
-    sheet.classList.remove('hidden', 'peek', 'half', 'full');
+    sheet.classList.remove('hidden', 'peek', 'full');
     sheet.classList.add(state);
     sheetState = state;
-
-    // Clear inline transform to let CSS take over
-    sheet.style.transform = '';
 }
 
 // ========================================
@@ -381,12 +315,7 @@ function showSquare(easting, northing, squareSize = 1000) {
     currentMarker = square;
 
     // Update sheet content
-    document.querySelector('#grid-ref .value-text').textContent = gridRef;
-    document.querySelector('#grid-ref').setAttribute('data-copy-value', gridRef);
-
-    const coordText = `${center.lat.toFixed(5)}°N, ${Math.abs(center.lon).toFixed(5)}°W`;
-    document.querySelector('#location .value-text').textContent = coordText;
-    document.querySelector('#location').setAttribute('data-copy-value', coordText);
+    document.getElementById('grid-ref-input').value = gridRef;
 
     // Update Google Maps link
     const googleMapsLink = `https://www.google.com/maps?q=${center.lat},${center.lon}`;
@@ -395,14 +324,14 @@ function showSquare(easting, northing, squareSize = 1000) {
     // Update 10km button
     const view10kmBtn = document.getElementById('view-10km-btn');
     const btnIcon = view10kmBtn.querySelector('.material-symbols-outlined');
-    const btnText = view10kmBtn.querySelector('span:last-child');
+    const btnLabel = view10kmBtn.querySelector('.btn-label');
 
     if (squareSize === 1000) {
         btnIcon.textContent = 'open_in_full';
-        btnText.textContent = 'View 10km Square';
+        btnLabel.textContent = '10km';
     } else {
         btnIcon.textContent = 'close_fullscreen';
-        btnText.textContent = 'View 1km Square';
+        btnLabel.textContent = '1km';
     }
 
     // Show sheet if hidden
@@ -422,8 +351,12 @@ function showSquare(easting, northing, squareSize = 1000) {
     // Show toast
     showToast(`Generated ${gridRef}`);
 
-    // Find stations
+    // Update URL
+    updateURL(gridRef);
+
+    // Find stations and POIs
     findNearbyStations(easting, northing, squareSize);
+    findNearbyPOIs(easting, northing, squareSize);
 }
 
 function getRandomSquare() {
@@ -508,14 +441,26 @@ async function findNearbyStations(easting, northing, squareSize) {
         const stations = data.elements.map(station => {
             const distance = distanceToSquareEdge(station.lat, station.lon, sw, ne, nw, se);
             const insideSquare = distance === 0;
+
+            // Get metadata fields
             const line = station.tags.line || station.tags['line:name'] || null;
+            const network = station.tags.network || null;
             const operator = station.tags.operator || null;
+
+            // Determine what to display: line > network > operator (if network is National Rail)
+            let displayMeta = null;
+            if (line) {
+                displayMeta = formatLineName(line);
+            } else if (network) {
+                displayMeta = network;
+            } else if (operator && network === 'National Rail') {
+                displayMeta = operator;
+            }
 
             return {
                 name: station.tags.name || 'Unnamed station',
                 type: getStationType(station.tags),
-                line: formatLineName(line),
-                operator: operator,
+                meta: displayMeta,
                 distance: distance,
                 inside: insideSquare,
                 lat: station.lat,
@@ -546,14 +491,26 @@ async function findNearbyStations(easting, northing, squareSize) {
 
             const allStations = widerData.elements.map(station => {
                 const distance = distanceToSquareEdge(station.lat, station.lon, sw, ne, nw, se);
+
+                // Get metadata fields
                 const line = station.tags.line || station.tags['line:name'] || null;
+                const network = station.tags.network || null;
                 const operator = station.tags.operator || null;
+
+                // Determine what to display: line > network > operator (if network is National Rail)
+                let displayMeta = null;
+                if (line) {
+                    displayMeta = formatLineName(line);
+                } else if (network) {
+                    displayMeta = network;
+                } else if (operator && network === 'National Rail') {
+                    displayMeta = operator;
+                }
 
                 return {
                     name: station.tags.name || 'Unnamed station',
                     type: getStationType(station.tags),
-                    line: formatLineName(line),
-                    operator: operator,
+                    meta: displayMeta,
                     distance: distance,
                     inside: false,
                     lat: station.lat,
@@ -625,7 +582,6 @@ function displayStations(stations) {
 }
 
 function renderStationItem(station, index) {
-    const meta = station.line || station.operator || '';
     const distanceText = station.distance > 0 ? formatDistance(station.distance) : '';
 
     return `
@@ -633,7 +589,7 @@ function renderStationItem(station, index) {
             ${getStationIcon(station.type)}
             <div class="station-info">
                 <div class="station-name">${station.name}</div>
-                ${meta ? `<div class="station-meta">${meta}</div>` : ''}
+                ${station.meta ? `<div class="station-meta">${station.meta}</div>` : ''}
             </div>
             ${distanceText ? `<div class="station-distance">${distanceText}</div>` : ''}
         </div>
@@ -679,7 +635,7 @@ function selectStation(index) {
 
     // Expand sheet on mobile
     if (window.innerWidth < 768 && sheetState === 'peek') {
-        setSheetState('half');
+        setSheetState('full');
     }
 }
 
@@ -695,6 +651,261 @@ function getStationMarkerIcon(type) {
         <div style="
             width: 24px;
             height: 24px;
+            background: ${color};
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></div>
+    `;
+}
+
+// ========================================
+// POI Search
+// ========================================
+
+async function findNearbyPOIs(easting, northing, squareSize) {
+    poiSearchRequestId++;
+    const thisRequestId = poiSearchRequestId;
+    console.log(`[POI Search #${thisRequestId}] Starting search for square at E${easting} N${northing}`);
+
+    const poiContent = document.getElementById('poi-content');
+    poiContent.innerHTML = '<p class="loading">Finding places<span class="loading-dots"></span></p>';
+
+    // Clear existing POI markers
+    poiMarkers.forEach(marker => map.removeLayer(marker));
+    poiMarkers = [];
+    currentPOIs = [];
+    selectedPOIIndex = null;
+
+    try {
+        const sw = osGridToLatLon(easting, northing);
+        const ne = osGridToLatLon(easting + squareSize, northing + squareSize);
+        const nw = osGridToLatLon(easting, northing + squareSize);
+        const se = osGridToLatLon(easting + squareSize, northing);
+
+        let buffer = 0.02;
+        const south = Math.min(sw.lat, ne.lat) - buffer;
+        const north = Math.max(sw.lat, ne.lat) + buffer;
+        const west = Math.min(sw.lon, ne.lon) - buffer;
+        const east = Math.max(sw.lon, ne.lon) + buffer;
+
+        // Overpass query for various POI types
+        const query = `
+            [out:json][timeout:25];
+            (
+                node["leisure"="park"]["name"](${south},${west},${north},${east});
+                way["leisure"="park"]["name"](${south},${west},${north},${east});
+                node["amenity"="pub"]["name"](${south},${west},${north},${east});
+                node["tourism"="museum"]["name"](${south},${west},${north},${east});
+                way["tourism"="museum"]["name"](${south},${west},${north},${east});
+                node["historic"~"memorial|monument"]["name"](${south},${west},${north},${east});
+                node["amenity"="place_of_worship"]["name"](${south},${west},${north},${east});
+                way["amenity"="place_of_worship"]["name"](${south},${west},${north},${east});
+                node["amenity"="library"]["name"](${south},${west},${north},${east});
+                node["amenity"="theatre"]["name"](${south},${west},${north},${east});
+                node["amenity"="cinema"]["name"](${south},${west},${north},${east});
+                node["tourism"="attraction"]["name"](${south},${west},${north},${east});
+                node["tourism"="viewpoint"]["name"](${south},${west},${north},${east});
+            );
+            out center;
+        `;
+
+        console.log(`[POI Search #${thisRequestId}] Sending Overpass query`);
+        const data = await fetchOverpassWithRetry(query, thisRequestId, poiContent);
+        console.log(`[POI Search #${thisRequestId}] Found ${data.elements?.length || 0} POIs`);
+
+        const pois = data.elements.map(poi => {
+            // Get center point (for ways, use center; for nodes, use lat/lon)
+            const lat = poi.center ? poi.center.lat : poi.lat;
+            const lon = poi.center ? poi.center.lon : poi.lon;
+
+            const distance = distanceToSquareEdge(lat, lon, sw, ne, nw, se);
+            const insideSquare = distance === 0;
+
+            return {
+                name: poi.tags.name || 'Unnamed place',
+                type: getPOIType(poi.tags),
+                distance: distance,
+                inside: insideSquare,
+                lat: lat,
+                lon: lon
+            };
+        }).filter(p => p.name !== 'Unnamed place')
+          .sort((a, b) => {
+              if (a.inside && !b.inside) return -1;
+              if (!a.inside && b.inside) return 1;
+              return a.distance - b.distance;
+          });
+
+        // Check if still latest request
+        if (thisRequestId !== poiSearchRequestId) {
+            console.log(`[POI Search #${thisRequestId}] Discarding results - newer request made`);
+            return;
+        }
+
+        currentPOIs = pois;
+        displayPOIs(pois);
+        addPOIMarkers(pois);
+
+    } catch (error) {
+        console.error(`[POI Search #${thisRequestId}] Error:`, error);
+
+        if (thisRequestId !== poiSearchRequestId) {
+            return;
+        }
+
+        poiContent.innerHTML = '<p class="no-stations">Error loading places</p>';
+    }
+}
+
+function displayPOIs(pois) {
+    const poiContent = document.getElementById('poi-content');
+
+    if (pois.length === 0) {
+        poiContent.innerHTML = '<p class="no-stations">No notable places found</p>';
+        return;
+    }
+
+    const insidePOIs = pois.filter(p => p.inside);
+    const outsidePOIs = pois.filter(p => !p.inside).slice(0, 10);
+
+    let html = '';
+
+    if (insidePOIs.length > 0) {
+        if (outsidePOIs.length > 0) {
+            html += '<div class="station-group-header">In Square</div>';
+        }
+        html += insidePOIs.map((p, idx) => renderPOIItem(p, pois.indexOf(p))).join('');
+    }
+
+    if (outsidePOIs.length > 0) {
+        if (insidePOIs.length > 0) {
+            html += '<div class="station-group-header">Nearby</div>';
+        }
+        html += outsidePOIs.map((p, idx) => renderPOIItem(p, pois.indexOf(p))).join('');
+    }
+
+    poiContent.innerHTML = html;
+
+    // Add click listeners
+    document.querySelectorAll('.poi-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const index = parseInt(item.getAttribute('data-index'));
+            selectPOI(index);
+        });
+    });
+}
+
+function renderPOIItem(poi, index) {
+    const distanceText = poi.distance > 0 ? formatDistance(poi.distance) : '';
+
+    return `
+        <div class="poi-item station-item" data-index="${index}">
+            ${getPOIIcon(poi.type)}
+            <div class="station-info">
+                <div class="station-name">${poi.name}</div>
+                <div class="station-meta">${poi.type}</div>
+            </div>
+            ${distanceText ? `<div class="station-distance">${distanceText}</div>` : ''}
+        </div>
+    `;
+}
+
+function addPOIMarkers(pois) {
+    poiMarkers.forEach(marker => map.removeLayer(marker));
+    poiMarkers = [];
+
+    pois.forEach((poi, index) => {
+        const iconHtml = getPOIMarkerIcon(poi.type);
+        const icon = L.divIcon({
+            html: iconHtml,
+            className: 'poi-marker',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        const marker = L.marker([poi.lat, poi.lon], { icon })
+            .addTo(map)
+            .on('click', () => selectPOI(index));
+
+        poiMarkers.push(marker);
+    });
+}
+
+function selectPOI(index) {
+    selectedPOIIndex = index;
+    const poi = currentPOIs[index];
+
+    // Update UI selection
+    document.querySelectorAll('.poi-item').forEach((item, idx) => {
+        if (idx === index) {
+            item.classList.add('selected');
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+
+    // Center map on POI
+    map.panTo([poi.lat, poi.lon]);
+
+    // Expand sheet on mobile
+    if (window.innerWidth < 768 && sheetState === 'peek') {
+        setSheetState('full');
+    }
+}
+
+function getPOIType(tags) {
+    if (tags.leisure === 'park') return 'Park';
+    if (tags.amenity === 'pub') return 'Pub';
+    if (tags.tourism === 'museum') return 'Museum';
+    if (tags.historic === 'memorial') return 'Memorial';
+    if (tags.historic === 'monument') return 'Monument';
+    if (tags.amenity === 'place_of_worship') return 'Place of Worship';
+    if (tags.amenity === 'library') return 'Library';
+    if (tags.amenity === 'theatre') return 'Theatre';
+    if (tags.amenity === 'cinema') return 'Cinema';
+    if (tags.tourism === 'attraction') return 'Attraction';
+    if (tags.tourism === 'viewpoint') return 'Viewpoint';
+    return 'Place';
+}
+
+function getPOIIcon(type) {
+    const icons = {
+        'Park': '<span class="material-symbols-outlined station-icon" style="color: #059669;">park</span>',
+        'Pub': '<span class="material-symbols-outlined station-icon" style="color: #f59e0b;">local_bar</span>',
+        'Museum': '<span class="material-symbols-outlined station-icon" style="color: #8b5cf6;">museum</span>',
+        'Memorial': '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">monument</span>',
+        'Monument': '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">monument</span>',
+        'Place of Worship': '<span class="material-symbols-outlined station-icon" style="color: #7c3aed;">church</span>',
+        'Library': '<span class="material-symbols-outlined station-icon" style="color: #0891b2;">local_library</span>',
+        'Theatre': '<span class="material-symbols-outlined station-icon" style="color: #ec4899;">theater_comedy</span>',
+        'Cinema': '<span class="material-symbols-outlined station-icon" style="color: #dc2626;">local_movies</span>',
+        'Attraction': '<span class="material-symbols-outlined station-icon" style="color: #f59e0b;">star</span>',
+        'Viewpoint': '<span class="material-symbols-outlined station-icon" style="color: #3b82f6;">visibility</span>',
+    };
+    return icons[type] || '<span class="material-symbols-outlined station-icon" style="color: #6b7280;">place</span>';
+}
+
+function getPOIMarkerIcon(type) {
+    const colors = {
+        'Park': '#059669',
+        'Pub': '#f59e0b',
+        'Museum': '#8b5cf6',
+        'Memorial': '#6b7280',
+        'Monument': '#6b7280',
+        'Place of Worship': '#7c3aed',
+        'Library': '#0891b2',
+        'Theatre': '#ec4899',
+        'Cinema': '#dc2626',
+        'Attraction': '#f59e0b',
+        'Viewpoint': '#3b82f6',
+    };
+    const color = colors[type] || '#6b7280';
+
+    return `
+        <div style="
+            width: 18px;
+            height: 18px;
             background: ${color};
             border: 2px solid white;
             border-radius: 50%;
@@ -809,26 +1020,82 @@ function getStationIcon(type) {
 }
 
 // ========================================
-// Copy to Clipboard
+// Grid Reference Input
 // ========================================
 
-function setupCopyHandlers() {
-    document.querySelectorAll('.copyable').forEach(element => {
-        element.addEventListener('click', () => {
-            const value = element.getAttribute('data-copy-value');
-            copyToClipboard(value);
-            element.classList.add('copied');
-            setTimeout(() => element.classList.remove('copied'), 300);
-            showToast('Copied!');
-        });
+function setupGridRefInput() {
+    const input = document.getElementById('grid-ref-input');
 
-        element.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                element.click();
-            }
-        });
+    function validateAndLoadGridRef() {
+        const value = input.value.trim();
+
+        if (!value) {
+            return;
+        }
+
+        const parsed = parseGridRef(value);
+        if (parsed) {
+            // Valid grid reference
+            input.classList.remove('error');
+            const squareSize = parsed.precision;
+            const normalizedGridRef = value.toUpperCase().replace(/\s/g, '');
+            showSquare(parsed.easting, parsed.northing, squareSize);
+            updateURL(normalizedGridRef);
+        } else {
+            // Invalid grid reference
+            input.classList.add('error');
+            showToast('Invalid grid reference');
+            setTimeout(() => {
+                input.classList.remove('error');
+            }, 300);
+        }
+    }
+
+    // Handle Enter key
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            validateAndLoadGridRef();
+            input.blur(); // Unfocus after submitting
+        }
     });
+
+    // Handle blur (when user clicks away)
+    input.addEventListener('blur', () => {
+        validateAndLoadGridRef();
+    });
+
+    // Auto-uppercase as user types
+    input.addEventListener('input', () => {
+        const cursorPos = input.selectionStart;
+        input.value = input.value.toUpperCase();
+        input.setSelectionRange(cursorPos, cursorPos);
+    });
+}
+
+// ========================================
+// URL Sharing
+// ========================================
+
+function updateURL(gridRef) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('grid', gridRef);
+    window.history.replaceState({}, '', url.toString());
+}
+
+function loadFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const gridParam = urlParams.get('grid');
+
+    if (gridParam) {
+        const parsed = parseGridRef(gridParam);
+        if (parsed) {
+            const squareSize = parsed.precision;
+            showSquare(parsed.easting, parsed.northing, squareSize);
+            return true;
+        }
+    }
+    return false;
 }
 
 function copyToClipboard(text) {
@@ -886,6 +1153,24 @@ document.getElementById('view-10km-btn').addEventListener('click', () => {
     }
 });
 
+document.getElementById('share-btn').addEventListener('click', () => {
+    const url = window.location.href;
+
+    if (navigator.share) {
+        navigator.share({
+            title: 'London Grid Square',
+            text: 'Check out this grid square',
+            url: url
+        }).catch(() => {
+            copyToClipboard(url);
+            showToast('Link copied!');
+        });
+    } else {
+        copyToClipboard(url);
+        showToast('Link copied!');
+    }
+});
+
 // ========================================
 // Initialize on Load
 // ========================================
@@ -893,5 +1178,13 @@ document.getElementById('view-10km-btn').addEventListener('click', () => {
 window.addEventListener('load', () => {
     initMap();
     initSheet();
-    setupCopyHandlers();
+    setupGridRefInput();
+
+    // Load from URL if present
+    const loadedFromURL = loadFromURL();
+
+    // If nothing loaded from URL, keep empty state visible
+    if (!loadedFromURL) {
+        // Empty state is visible by default
+    }
 });
