@@ -16,8 +16,8 @@ function initMap() {
         attributionControl: true
     }).setView([51.5074, -0.1278], 10);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
+    L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors, Tiles style by Humanitarian OpenStreetMap Team',
         maxZoom: 19
     }).addTo(map);
 

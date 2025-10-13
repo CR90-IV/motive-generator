@@ -13,6 +13,8 @@ let selectedPOIIndex = null;
 let selectedAmenityIndex = null;
 let activePOIFilters = new Set();
 let activeAmenityFilters = new Set();
+let poiFiltersCollapsed = false;
+let amenityFiltersCollapsed = false;
 
 /**
  * Searches for nearby points of interest
@@ -37,11 +39,16 @@ async function findNearbyPOIs(easting, northing, squareSize) {
         const nw = osGridToLatLon(easting, northing + squareSize);
         const se = osGridToLatLon(easting + squareSize, northing);
 
-        let buffer = 0.02;
-        const south = Math.min(sw.lat, ne.lat) - buffer;
-        const north = Math.max(sw.lat, ne.lat) + buffer;
-        const west = Math.min(sw.lon, ne.lon) - buffer;
-        const east = Math.max(sw.lon, ne.lon) + buffer;
+        // Calculate 2km buffer properly accounting for lat/lon difference
+        const centerLat = (sw.lat + ne.lat) / 2;
+        const bufferKm = 2; // 2km buffer
+        const latBuffer = bufferKm / 111.32; // ~0.018 degrees
+        const lonBuffer = bufferKm / (111.32 * Math.cos(centerLat * Math.PI / 180)); // Adjust for latitude
+
+        const south = Math.min(sw.lat, ne.lat) - latBuffer;
+        const north = Math.max(sw.lat, ne.lat) + latBuffer;
+        const west = Math.min(sw.lon, ne.lon) - lonBuffer;
+        const east = Math.max(sw.lon, ne.lon) + lonBuffer;
 
         // Expanded Overpass query for broader POI categories
         const query = `
@@ -117,7 +124,7 @@ async function findNearbyPOIs(easting, northing, squareSize) {
         currentPOIs = pois;
         activePOIFilters.clear();
         displayPOIs(pois);
-        // Don't add POI markers automatically - only show when clicked
+        addPOIMarkers(pois);
 
     } catch (error) {
         console.error(`[POI Search #${thisRequestId}] Error:`, error);
@@ -156,11 +163,16 @@ async function findNearbyAmenities(easting, northing, squareSize) {
         const nw = osGridToLatLon(easting, northing + squareSize);
         const se = osGridToLatLon(easting + squareSize, northing);
 
-        let buffer = 0.02;
-        const south = Math.min(sw.lat, ne.lat) - buffer;
-        const north = Math.max(sw.lat, ne.lat) + buffer;
-        const west = Math.min(sw.lon, ne.lon) - buffer;
-        const east = Math.max(sw.lon, ne.lon) + buffer;
+        // Calculate 2km buffer properly accounting for lat/lon difference
+        const centerLat = (sw.lat + ne.lat) / 2;
+        const bufferKm = 2; // 2km buffer
+        const latBuffer = bufferKm / 111.32; // ~0.018 degrees
+        const lonBuffer = bufferKm / (111.32 * Math.cos(centerLat * Math.PI / 180)); // Adjust for latitude
+
+        const south = Math.min(sw.lat, ne.lat) - latBuffer;
+        const north = Math.max(sw.lat, ne.lat) + latBuffer;
+        const west = Math.min(sw.lon, ne.lon) - lonBuffer;
+        const east = Math.max(sw.lon, ne.lon) + lonBuffer;
 
         // Query for specific amenities
         const query = `
@@ -212,7 +224,7 @@ async function findNearbyAmenities(easting, northing, squareSize) {
         currentAmenities = amenities;
         activeAmenityFilters.clear();
         displayAmenities(amenities);
-        // Don't add amenity markers automatically - only show when clicked
+        addAmenityMarkers(amenities);
 
     } catch (error) {
         console.error(`[Amenity Search #${thisRequestId}] Error:`, error);
@@ -295,7 +307,12 @@ function displayPOIs(pois) {
 
     // Add filters if there are multiple types
     if (types.length > 1) {
-        html += '<div class="filter-container">';
+        html += '<div class="filter-section">';
+        html += `<button class="filter-toggle" data-filter-type="poi" aria-label="Toggle filters">
+            <span class="filter-toggle-label">Filters</span>
+            <span class="material-symbols-outlined">${poiFiltersCollapsed ? 'expand_more' : 'expand_less'}</span>
+        </button>`;
+        html += `<div class="filter-container ${poiFiltersCollapsed ? 'collapsed' : ''}">`;
         types.sort().forEach(type => {
             const count = pois.filter(p => p.metadata === type).length;
             const active = activePOIFilters.size === 0 || activePOIFilters.has(type);
@@ -303,6 +320,7 @@ function displayPOIs(pois) {
                 ${type} (${count})
             </button>`;
         });
+        html += '</div>';
         html += '</div>';
     }
 
@@ -326,6 +344,15 @@ function displayPOIs(pois) {
 
     poiContent.innerHTML = html;
 
+    // Add filter toggle listener
+    const poiFilterToggle = document.querySelector('.filter-toggle[data-filter-type="poi"]');
+    if (poiFilterToggle) {
+        poiFilterToggle.addEventListener('click', () => {
+            poiFiltersCollapsed = !poiFiltersCollapsed;
+            displayPOIs(currentPOIs);
+        });
+    }
+
     // Add filter click listeners
     document.querySelectorAll('.filter-btn[data-filter-type="poi"]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -336,6 +363,7 @@ function displayPOIs(pois) {
                 activePOIFilters.add(filter);
             }
             displayPOIs(currentPOIs);
+            updatePOIMapHighlighting();
         });
     });
 
@@ -375,7 +403,12 @@ function displayAmenities(amenities) {
 
     // Add filters if there are multiple types
     if (types.length > 1) {
-        html += '<div class="filter-container">';
+        html += '<div class="filter-section">';
+        html += `<button class="filter-toggle" data-filter-type="amenity" aria-label="Toggle filters">
+            <span class="filter-toggle-label">Filters</span>
+            <span class="material-symbols-outlined">${amenityFiltersCollapsed ? 'expand_more' : 'expand_less'}</span>
+        </button>`;
+        html += `<div class="filter-container ${amenityFiltersCollapsed ? 'collapsed' : ''}">`;
         types.sort().forEach(type => {
             const count = amenities.filter(a => a.metadata === type).length;
             const active = activeAmenityFilters.size === 0 || activeAmenityFilters.has(type);
@@ -383,6 +416,7 @@ function displayAmenities(amenities) {
                 ${type} (${count})
             </button>`;
         });
+        html += '</div>';
         html += '</div>';
     }
 
@@ -406,6 +440,15 @@ function displayAmenities(amenities) {
 
     amenitiesContent.innerHTML = html;
 
+    // Add filter toggle listener
+    const amenityFilterToggle = document.querySelector('.filter-toggle[data-filter-type="amenity"]');
+    if (amenityFilterToggle) {
+        amenityFilterToggle.addEventListener('click', () => {
+            amenityFiltersCollapsed = !amenityFiltersCollapsed;
+            displayAmenities(currentAmenities);
+        });
+    }
+
     // Add filter click listeners
     document.querySelectorAll('.filter-btn[data-filter-type="amenity"]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -416,6 +459,7 @@ function displayAmenities(amenities) {
                 activeAmenityFilters.add(filter);
             }
             displayAmenities(currentAmenities);
+            updateAmenityMapHighlighting();
         });
     });
 
@@ -480,7 +524,18 @@ function addPOIMarkers(pois) {
             iconAnchor: [12, 12]
         });
 
+        // Create popup content
+        let popupContent = `<div class="marker-popup"><strong>${poi.name}</strong>`;
+        if (poi.metadata) {
+            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${poi.metadata}</span>`;
+        }
+        if (poi.distance > 0) {
+            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(poi.distance)} from square</span>`;
+        }
+        popupContent += `</div>`;
+
         const marker = L.marker([poi.lat, poi.lon], { icon })
+            .bindPopup(popupContent, { closeButton: true, offset: [0, -12] })
             .addTo(map)
             .on('click', () => selectPOI(index));
 
@@ -500,11 +555,22 @@ function addAmenityMarkers(amenities) {
         const icon = L.divIcon({
             html: iconHtml,
             className: 'amenity-marker',
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
         });
 
+        // Create popup content
+        let popupContent = `<div class="marker-popup"><strong>${amenity.name}</strong>`;
+        if (amenity.metadata) {
+            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${amenity.metadata}</span>`;
+        }
+        if (amenity.distance > 0) {
+            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(amenity.distance)} from square</span>`;
+        }
+        popupContent += `</div>`;
+
         const marker = L.marker([amenity.lat, amenity.lon], { icon })
+            .bindPopup(popupContent, { closeButton: true, offset: [0, -11] })
             .addTo(map)
             .on('click', () => selectAmenity(index));
 
@@ -530,34 +596,39 @@ function selectPOI(index) {
             item.classList.remove('selected');
         }
     });
-    document.querySelectorAll('.amenity-item').forEach(item => {
+    document.querySelectorAll('.amenity-item, .station-item').forEach(item => {
         item.classList.remove('selected');
     });
 
-    // Clear existing POI and amenity markers
-    poiMarkers.forEach(marker => map.removeLayer(marker));
-    poiMarkers = [];
-    amenityMarkers.forEach(marker => map.removeLayer(marker));
-    amenityMarkers = [];
-
-    // Create marker only for selected POI
-    const iconHtml = getPOIMarkerIcon(poi.tags);
-    const icon = L.divIcon({
-        html: iconHtml,
-        className: 'poi-marker marker-highlight',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+    // Remove all marker highlights
+    poiMarkers.forEach(m => {
+        const elem = m.getElement();
+        if (elem) elem.classList.remove('marker-highlight');
     });
+    amenityMarkers.forEach(m => {
+        const elem = m.getElement();
+        if (elem) elem.classList.remove('marker-highlight');
+    });
+    if (typeof stationMarkers !== 'undefined') {
+        stationMarkers.forEach(m => {
+            const elem = m.getElement();
+            if (elem) elem.classList.remove('marker-highlight');
+        });
+    }
 
-    const marker = L.marker([poi.lat, poi.lon], { icon }).addTo(map);
-    poiMarkers.push(marker);
+    // Highlight selected POI marker
+    const selectedMarker = poiMarkers[index];
+    if (selectedMarker) {
+        const elem = selectedMarker.getElement();
+        if (elem) elem.classList.add('marker-highlight');
+    }
 
     // Center map on POI
     map.panTo([poi.lat, poi.lon]);
 
-    // Expand sheet on mobile
-    if (window.innerWidth < 768 && sheetState === 'peek') {
-        setSheetState('full');
+    // Collapse sheet on mobile to show map
+    if (window.innerWidth < 768 && sheetState === 'full') {
+        setSheetState('peek');
     }
 }
 
@@ -579,35 +650,134 @@ function selectAmenity(index) {
             item.classList.remove('selected');
         }
     });
-    document.querySelectorAll('.poi-item').forEach(item => {
+    document.querySelectorAll('.poi-item, .station-item').forEach(item => {
         item.classList.remove('selected');
     });
 
-    // Clear existing POI and amenity markers
-    poiMarkers.forEach(marker => map.removeLayer(marker));
-    poiMarkers = [];
-    amenityMarkers.forEach(marker => map.removeLayer(marker));
-    amenityMarkers = [];
-
-    // Create marker only for selected amenity
-    const iconHtml = getAmenityMarkerIcon(amenity.tags);
-    const icon = L.divIcon({
-        html: iconHtml,
-        className: 'amenity-marker marker-highlight',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
+    // Remove all marker highlights
+    amenityMarkers.forEach(m => {
+        const elem = m.getElement();
+        if (elem) elem.classList.remove('marker-highlight');
     });
+    poiMarkers.forEach(m => {
+        const elem = m.getElement();
+        if (elem) elem.classList.remove('marker-highlight');
+    });
+    if (typeof stationMarkers !== 'undefined') {
+        stationMarkers.forEach(m => {
+            const elem = m.getElement();
+            if (elem) elem.classList.remove('marker-highlight');
+        });
+    }
 
-    const marker = L.marker([amenity.lat, amenity.lon], { icon }).addTo(map);
-    amenityMarkers.push(marker);
+    // Highlight selected amenity marker
+    const selectedMarker = amenityMarkers[index];
+    if (selectedMarker) {
+        const elem = selectedMarker.getElement();
+        if (elem) elem.classList.add('marker-highlight');
+    }
 
     // Center map on amenity
     map.panTo([amenity.lat, amenity.lon]);
 
-    // Expand sheet on mobile
-    if (window.innerWidth < 768 && sheetState === 'peek') {
-        setSheetState('full');
+    // Collapse sheet on mobile to show map
+    if (window.innerWidth < 768 && sheetState === 'full') {
+        setSheetState('peek');
     }
+}
+
+/**
+ * Updates POI markers on map based on active filters
+ */
+function updatePOIMapHighlighting() {
+    // Clear existing POI markers
+    poiMarkers.forEach(marker => map.removeLayer(marker));
+    poiMarkers = [];
+
+    // Determine which POIs to show
+    let poisToShow = currentPOIs;
+    let highlightClass = '';
+
+    if (activePOIFilters.size > 0) {
+        poisToShow = currentPOIs.filter(p => activePOIFilters.has(p.metadata));
+        highlightClass = 'poi-filter-highlight';
+    }
+
+    // Add markers for visible POIs
+    poisToShow.forEach((poi, index) => {
+        const iconHtml = getPOIMarkerIcon(poi.tags);
+        const icon = L.divIcon({
+            html: iconHtml,
+            className: `poi-marker ${highlightClass}`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        // Create popup content
+        let popupContent = `<div class="marker-popup"><strong>${poi.name}</strong>`;
+        if (poi.metadata) {
+            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${poi.metadata}</span>`;
+        }
+        if (poi.distance > 0) {
+            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(poi.distance)} from square</span>`;
+        }
+        popupContent += `</div>`;
+
+        const originalIndex = currentPOIs.indexOf(poi);
+        const marker = L.marker([poi.lat, poi.lon], { icon })
+            .bindPopup(popupContent, { closeButton: true, offset: [0, -12] })
+            .addTo(map)
+            .on('click', () => selectPOI(originalIndex));
+
+        poiMarkers.push(marker);
+    });
+}
+
+/**
+ * Updates amenity markers on map based on active filters
+ */
+function updateAmenityMapHighlighting() {
+    // Clear existing amenity markers
+    amenityMarkers.forEach(marker => map.removeLayer(marker));
+    amenityMarkers = [];
+
+    // Determine which amenities to show
+    let amenitiesToShow = currentAmenities;
+    let highlightClass = '';
+
+    if (activeAmenityFilters.size > 0) {
+        amenitiesToShow = currentAmenities.filter(a => activeAmenityFilters.has(a.metadata));
+        highlightClass = 'amenity-filter-highlight';
+    }
+
+    // Add markers for visible amenities
+    amenitiesToShow.forEach((amenity, index) => {
+        const iconHtml = getAmenityMarkerIcon(amenity.tags);
+        const icon = L.divIcon({
+            html: iconHtml,
+            className: `amenity-marker ${highlightClass}`,
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
+        });
+
+        // Create popup content
+        let popupContent = `<div class="marker-popup"><strong>${amenity.name}</strong>`;
+        if (amenity.metadata) {
+            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${amenity.metadata}</span>`;
+        }
+        if (amenity.distance > 0) {
+            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(amenity.distance)} from square</span>`;
+        }
+        popupContent += `</div>`;
+
+        const originalIndex = currentAmenities.indexOf(amenity);
+        const marker = L.marker([amenity.lat, amenity.lon], { icon })
+            .bindPopup(popupContent, { closeButton: true, offset: [0, -11] })
+            .addTo(map)
+            .on('click', () => selectAmenity(originalIndex));
+
+        amenityMarkers.push(marker);
+    });
 }
 
 /**
@@ -699,25 +869,64 @@ function getAmenityIcon(tags) {
  * Returns marker icon HTML for POI type
  */
 function getPOIMarkerIcon(tags) {
+    let icon = 'place';
     let color = '#6b7280';
 
-    // Determine color based on tags
-    if (tags.leisure) color = '#059669';
-    else if (tags.tourism) color = '#f59e0b';
-    else if (tags.historic) color = '#92400e';
-    else if (tags.natural === 'water' || tags.waterway) color = '#0284c7';
-    else if (tags.natural) color = '#78716c';
-    else if (tags.aeroway) color = '#0284c7';
-    else if (tags.building) color = '#6b7280';
+    // Determine icon and color based on tags (same as listing)
+    if (tags.leisure === 'park' || tags.leisure === 'garden') {
+        icon = 'park'; color = '#059669';
+    } else if (tags.tourism === 'museum') {
+        icon = 'museum'; color = '#8b5cf6';
+    } else if (tags.historic === 'memorial' || tags.historic === 'monument') {
+        icon = 'chess_rook'; color = '#6b7280';
+    } else if (tags.amenity === 'library') {
+        icon = 'local_library'; color = '#0891b2';
+    } else if (tags.amenity === 'university') {
+        icon = 'school'; color = '#0891b2';
+    } else if (tags.amenity === 'theatre') {
+        icon = 'theater_comedy'; color = '#ec4899';
+    } else if (tags.amenity === 'cinema') {
+        icon = 'local_movies'; color = '#dc2626';
+    } else if (tags.tourism === 'attraction') {
+        icon = 'attractions'; color = '#f59e0b';
+    } else if (tags.tourism === 'viewpoint') {
+        icon = 'visibility'; color = '#3b82f6';
+    } else if (tags.natural === 'peak') {
+        icon = 'terrain'; color = '#78716c';
+    } else if (tags.natural === 'water' || tags.waterway) {
+        icon = 'water'; color = '#0284c7';
+    } else if (tags.aeroway) {
+        icon = 'flight'; color = '#0284c7';
+    } else if (tags.man_made === 'bridge' || tags.bridge) {
+        icon = 'flyover'; color = '#6b7280';
+    } else if (tags.building) {
+        icon = 'domain'; color = '#6b7280';
+    } else if (tags.historic) {
+        icon = 'history_edu'; color = '#92400e';
+    } else if (tags.leisure) {
+        icon = 'sports_soccer'; color = '#059669';
+    } else if (tags.tourism) {
+        icon = 'tour'; color = '#f59e0b';
+    }
 
     return `
         <div style="
-            width: 18px;
-            height: 18px;
-            background: ${hexToRgba(color, 0.5)};
-            border: 1px solid ${color};
+            width: 24px;
+            height: 24px;
+            background: ${hexToRgba(color, 0.75)};
+            border: 2px solid white;
             border-radius: 50%;
-        "></div>
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        ">
+            <span class="material-symbols-outlined" style="
+                font-size: 15px;
+                color: white;
+                font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            ">${icon}</span>
+        </div>
     `;
 }
 
@@ -725,25 +934,36 @@ function getPOIMarkerIcon(tags) {
  * Returns marker icon HTML for amenity type
  */
 function getAmenityMarkerIcon(tags) {
+    let icon = 'store';
     let color = '#6b7280';
 
     if (tags.amenity === 'drinking_water') {
-        color = '#0284c7';
+        icon = 'water_drop'; color = '#0284c7';
     } else if (tags.amenity === 'cafe') {
-        color = '#92400e';
+        icon = 'local_cafe'; color = '#92400e';
     } else if (tags.amenity === 'hotel') {
-        color = '#7c3aed';
+        icon = 'hotel'; color = '#7c3aed';
     } else if (tags.amenity === 'toilets') {
-        color = '#0891b2';
+        icon = 'wc'; color = '#0891b2';
     }
 
     return `
         <div style="
-            width: 16px;
-            height: 16px;
-            background: ${hexToRgba(color, 0.5)};
-            border: 1px solid ${color};
+            width: 22px;
+            height: 22px;
+            background: ${hexToRgba(color, 0.7)};
+            border: 2px solid white;
             border-radius: 50%;
-        "></div>
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        ">
+            <span class="material-symbols-outlined" style="
+                font-size: 14px;
+                color: white;
+                font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            ">${icon}</span>
+        </div>
     `;
 }

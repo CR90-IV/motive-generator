@@ -64,11 +64,16 @@ async function findNearbyStations(easting, northing, squareSize) {
         const se = osGridToLatLon(easting + squareSize, northing);
         const center = osGridToLatLon(easting + squareSize / 2, northing + squareSize / 2);
 
-        let buffer = 0.02;
-        const south = Math.min(sw.lat, ne.lat) - buffer;
-        const north = Math.max(sw.lat, ne.lat) + buffer;
-        const west = Math.min(sw.lon, ne.lon) - buffer;
-        const east = Math.max(sw.lon, ne.lon) + buffer;
+        // Calculate 2km buffer properly accounting for lat/lon difference
+        const centerLat = (sw.lat + ne.lat) / 2;
+        const bufferKm = 2; // 2km buffer
+        const latBuffer = bufferKm / 111.32; // ~0.018 degrees
+        const lonBuffer = bufferKm / (111.32 * Math.cos(centerLat * Math.PI / 180)); // Adjust for latitude
+
+        const south = Math.min(sw.lat, ne.lat) - latBuffer;
+        const north = Math.max(sw.lat, ne.lat) + latBuffer;
+        const west = Math.min(sw.lon, ne.lon) - lonBuffer;
+        const east = Math.max(sw.lon, ne.lon) + lonBuffer;
 
         const query = `
             [out:json][timeout:25];
@@ -263,11 +268,23 @@ function addStationMarkers(stations) {
         const icon = L.divIcon({
             html: iconHtml,
             className: 'station-marker',
-            iconSize: [30, 30],
-            iconAnchor: [15, 15]
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
         });
 
+        // Create popup content
+        let popupContent = `<div class="marker-popup"><strong>${station.name}</strong>`;
+        if (station.meta) {
+            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${station.meta}</span>`;
+        }
+        popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${station.type}</span>`;
+        if (station.distance > 0) {
+            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(station.distance)} from square</span>`;
+        }
+        popupContent += `</div>`;
+
         const marker = L.marker([station.lat, station.lon], { icon })
+            .bindPopup(popupContent, { closeButton: true, offset: [0, -16] })
             .addTo(map)
             .on('click', () => selectStation(index));
 
@@ -296,27 +313,37 @@ function selectStation(index) {
         item.classList.remove('selected');
     });
 
-    // Clear POI/amenity markers (since stations keep their markers visible)
+    // Remove all marker highlights
+    stationMarkers.forEach(m => {
+        const elem = m.getElement();
+        if (elem) elem.classList.remove('marker-highlight');
+    });
     if (typeof poiMarkers !== 'undefined') {
-        poiMarkers.forEach(marker => map.removeLayer(marker));
-        poiMarkers = [];
+        poiMarkers.forEach(m => {
+            const elem = m.getElement();
+            if (elem) elem.classList.remove('marker-highlight');
+        });
     }
     if (typeof amenityMarkers !== 'undefined') {
-        amenityMarkers.forEach(marker => map.removeLayer(marker));
-        amenityMarkers = [];
+        amenityMarkers.forEach(m => {
+            const elem = m.getElement();
+            if (elem) elem.classList.remove('marker-highlight');
+        });
     }
 
-    // Highlight marker (call highlightMarker from pois.js if available)
-    if (typeof highlightMarker === 'function') {
-        highlightMarker(stationMarkers[index], 'station');
+    // Highlight selected station marker
+    const selectedMarker = stationMarkers[index];
+    if (selectedMarker) {
+        const elem = selectedMarker.getElement();
+        if (elem) elem.classList.add('marker-highlight');
     }
 
     // Center map on station
     map.panTo([station.lat, station.lon]);
 
-    // Expand sheet on mobile
-    if (window.innerWidth < 768 && sheetState === 'peek') {
-        setSheetState('full');
+    // Collapse sheet on mobile to show map
+    if (window.innerWidth < 768 && sheetState === 'full') {
+        setSheetState('peek');
     }
 }
 
@@ -347,20 +374,36 @@ function getStationIcon(type) {
  * Returns marker icon HTML for station type
  */
 function getStationMarkerIcon(type) {
+    const icons = {
+        'Underground': 'subway',
+        'Train': 'train',
+        'Light Rail': 'tram'
+    };
     const colors = {
         'Underground': '#dc2626',
         'Train': '#3b82f6',
         'Light Rail': '#059669'
     };
+    const icon = icons[type] || 'train';
     const color = colors[type] || '#3b82f6';
 
     return `
         <div style="
-            width: 24px;
-            height: 24px;
-            background: ${hexToRgba(color, 0.5)};
-            border: 2px solid ${color};
-            border-radius: 50%;
-        "></div>
+            width: 32px;
+            height: 32px;
+            background: ${hexToRgba(color, 0.95)};
+            border: 2px solid white;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        ">
+            <span class="material-symbols-outlined" style="
+                font-size: 20px;
+                color: white;
+                font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            ">${icon}</span>
+        </div>
     `;
 }
