@@ -118,7 +118,10 @@ async function findNearbyStations(easting, northing, squareSize) {
                 distance: distance,
                 inside: insideSquare,
                 lat: station.lat,
-                lon: station.lon
+                lon: station.lon,
+                osmType: station.type,
+                osmId: station.id,
+                tags: station.tags
             };
         }).filter(s => s.name !== 'Unnamed station')
           .sort((a, b) => {
@@ -168,7 +171,10 @@ async function findNearbyStations(easting, northing, squareSize) {
                     distance: distance,
                     inside: false,
                     lat: station.lat,
-                    lon: station.lon
+                    lon: station.lon,
+                    osmType: station.type,
+                    osmId: station.id,
+                    tags: station.tags
                 };
             }).filter(s => s.name !== 'Unnamed station')
               .sort((a, b) => a.distance - b.distance);
@@ -275,12 +281,23 @@ function addStationMarkers(stations) {
         // Create popup content
         let popupContent = `<div class="marker-popup"><strong>${station.name}</strong>`;
         if (station.meta) {
-            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${station.meta}</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.875rem;">${station.meta}</div>`;
         }
-        popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${station.type}</span>`;
+        popupContent += `<div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.875rem;">${station.type}</div>`;
         if (station.distance > 0) {
-            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(station.distance)} from square</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #9ca3af; font-size: 0.8125rem;">${formatDistance(station.distance)} from square</div>`;
         }
+
+        // Add tags
+        if (station.tags && Object.keys(station.tags).length > 0) {
+            popupContent += `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.75rem; color: #9ca3af;">`;
+            Object.entries(station.tags).forEach(([key, value]) => {
+                popupContent += `<div><span style="color: #6b7280;">${key}:</span> ${value}</div>`;
+            });
+            popupContent += `</div>`;
+        }
+
+        popupContent += `<div style="margin-top: 0.5rem;"><a href="https://www.openstreetmap.org/${station.osmType}/${station.osmId}" target="_blank" rel="noopener" style="color: #3b82f6; font-size: 0.7rem; text-decoration: none;">OpenStreetMap →</a></div>`;
         popupContent += `</div>`;
 
         const marker = L.marker([station.lat, station.lon], { icon })
@@ -298,6 +315,21 @@ function addStationMarkers(stations) {
 function selectStation(index) {
     selectedStationIndex = index;
     const station = currentStations[index];
+
+    // Log all station information
+    console.log('[Station Selected]', {
+        name: station.name,
+        type: station.type,
+        meta: station.meta,
+        tags: station.tags,
+        distance: station.distance,
+        inside: station.inside,
+        lat: station.lat,
+        lon: station.lon,
+        osmType: station.osmType,
+        osmId: station.osmId,
+        osmUrl: `https://www.openstreetmap.org/${station.osmType}/${station.osmId}`
+    });
 
     // Update UI selection
     document.querySelectorAll('.station-item').forEach((item, idx) => {
@@ -329,6 +361,16 @@ function selectStation(index) {
             const elem = m.getElement();
             if (elem) elem.classList.remove('marker-highlight');
         });
+    }
+
+    // Clear all polygons
+    if (typeof poiPolygons !== 'undefined') {
+        poiPolygons.forEach(polygon => map.removeLayer(polygon));
+        poiPolygons.length = 0;
+    }
+    if (typeof amenityPolygons !== 'undefined') {
+        amenityPolygons.forEach(polygon => map.removeLayer(polygon));
+        amenityPolygons.length = 0;
     }
 
     // Highlight selected station marker

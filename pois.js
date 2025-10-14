@@ -9,6 +9,8 @@ let currentPOIs = [];
 let currentAmenities = [];
 let poiMarkers = [];
 let amenityMarkers = [];
+let poiPolygons = [];
+let amenityPolygons = [];
 let selectedPOIIndex = null;
 let selectedAmenityIndex = null;
 let activePOIFilters = new Set();
@@ -27,9 +29,11 @@ async function findNearbyPOIs(easting, northing, squareSize) {
     const poiContent = document.getElementById('poi-content');
     poiContent.innerHTML = '<p class="loading">Finding places<span class="loading-dots"></span></p>';
 
-    // Clear existing POI markers
+    // Clear existing POI markers and polygons
     poiMarkers.forEach(marker => map.removeLayer(marker));
     poiMarkers = [];
+    poiPolygons.forEach(polygon => map.removeLayer(polygon));
+    poiPolygons = [];
     currentPOIs = [];
     selectedPOIIndex = null;
 
@@ -72,8 +76,10 @@ async function findNearbyPOIs(easting, northing, squareSize) {
                 way["historic"]["name"](${south},${west},${north},${east});
                 node["aeroway"~"aerodrome|airport"]["name"](${south},${west},${north},${east});
                 way["aeroway"~"aerodrome|airport"]["name"](${south},${west},${north},${east});
+                node["railway"="level_crossing"](${south},${west},${north},${east});
+                node["railway"="crossing"](${south},${west},${north},${east});
             );
-            out center;
+            out geom;
         `;
 
         console.log(`[POI Search #${thisRequestId}] Sending Overpass query`);
@@ -81,9 +87,28 @@ async function findNearbyPOIs(easting, northing, squareSize) {
         console.log(`[POI Search #${thisRequestId}] Found ${data.elements?.length || 0} POIs`);
 
         const pois = data.elements.map(poi => {
-            // Get center point (for ways, use center; for nodes, use lat/lon)
-            const lat = poi.center ? poi.center.lat : poi.lat;
-            const lon = poi.center ? poi.center.lon : poi.lon;
+            // Extract geometry if available (for ways/relations)
+            let geometry = null;
+            if (poi.type === 'way' && poi.geometry) {
+                geometry = poi.geometry.map(node => [node.lat, node.lon]);
+            }
+
+            // Get center point
+            let lat, lon;
+            if (poi.lat && poi.lon) {
+                // Node - has direct lat/lon
+                lat = poi.lat;
+                lon = poi.lon;
+            } else if (geometry && geometry.length > 0) {
+                // Way - calculate center from geometry
+                const lats = geometry.map(p => p[0]);
+                const lons = geometry.map(p => p[1]);
+                lat = lats.reduce((a, b) => a + b) / lats.length;
+                lon = lons.reduce((a, b) => a + b) / lons.length;
+            } else {
+                // No valid coordinates
+                return null;
+            }
 
             const distance = distanceToSquareEdge(lat, lon, sw, ne, nw, se);
             const insideSquare = distance === 0;
@@ -91,16 +116,29 @@ async function findNearbyPOIs(easting, northing, squareSize) {
             // Extract metadata from tags
             const metadata = extractPOIMetadata(poi.tags);
 
+            // Get name or default name for railway crossings
+            let name = poi.tags.name;
+            if (!name && poi.tags.railway === 'level_crossing') {
+                name = 'Railway Level Crossing';
+            } else if (!name && poi.tags.railway === 'crossing') {
+                name = 'Railway Crossing';
+            } else if (!name) {
+                name = 'Unnamed place';
+            }
+
             return {
-                name: poi.tags.name || 'Unnamed place',
+                name: name,
                 metadata: metadata,
                 tags: poi.tags,
                 distance: distance,
                 inside: insideSquare,
                 lat: lat,
-                lon: lon
+                lon: lon,
+                geometry: geometry,
+                osmType: poi.type,
+                osmId: poi.id
             };
-        }).filter(p => p.name !== 'Unnamed place')
+        }).filter(p => p !== null && p.name !== 'Unnamed place')
           .sort((a, b) => {
               if (a.inside && !b.inside) return -1;
               if (!a.inside && b.inside) return 1;
@@ -151,9 +189,11 @@ async function findNearbyAmenities(easting, northing, squareSize) {
     const amenitiesContent = document.getElementById('amenities-content');
     amenitiesContent.innerHTML = '<p class="loading">Finding amenities<span class="loading-dots"></span></p>';
 
-    // Clear existing amenity markers
+    // Clear existing amenity markers and polygons
     amenityMarkers.forEach(marker => map.removeLayer(marker));
     amenityMarkers = [];
+    amenityPolygons.forEach(polygon => map.removeLayer(polygon));
+    amenityPolygons = [];
     currentAmenities = [];
     selectedAmenityIndex = null;
 
@@ -183,7 +223,7 @@ async function findNearbyAmenities(easting, northing, squareSize) {
                 way["amenity"="hotel"]["name"](${south},${west},${north},${east});
                 node["amenity"="toilets"](${south},${west},${north},${east});
             );
-            out center;
+            out geom;
         `;
 
         console.log(`[Amenity Search #${thisRequestId}] Sending Overpass query`);
@@ -191,8 +231,28 @@ async function findNearbyAmenities(easting, northing, squareSize) {
         console.log(`[Amenity Search #${thisRequestId}] Found ${data.elements?.length || 0} amenities`);
 
         const amenities = data.elements.map(amenity => {
-            const lat = amenity.center ? amenity.center.lat : amenity.lat;
-            const lon = amenity.center ? amenity.center.lon : amenity.lon;
+            // Extract geometry if available (for ways/relations)
+            let geometry = null;
+            if (amenity.type === 'way' && amenity.geometry) {
+                geometry = amenity.geometry.map(node => [node.lat, node.lon]);
+            }
+
+            // Get center point
+            let lat, lon;
+            if (amenity.lat && amenity.lon) {
+                // Node - has direct lat/lon
+                lat = amenity.lat;
+                lon = amenity.lon;
+            } else if (geometry && geometry.length > 0) {
+                // Way - calculate center from geometry
+                const lats = geometry.map(p => p[0]);
+                const lons = geometry.map(p => p[1]);
+                lat = lats.reduce((a, b) => a + b) / lats.length;
+                lon = lons.reduce((a, b) => a + b) / lons.length;
+            } else {
+                // No valid coordinates
+                return null;
+            }
 
             const distance = distanceToSquareEdge(lat, lon, sw, ne, nw, se);
             const insideSquare = distance === 0;
@@ -207,9 +267,13 @@ async function findNearbyAmenities(easting, northing, squareSize) {
                 distance: distance,
                 inside: insideSquare,
                 lat: lat,
-                lon: lon
+                lon: lon,
+                geometry: geometry,
+                osmType: amenity.type,
+                osmId: amenity.id
             };
-        }).sort((a, b) => {
+        }).filter(a => a !== null)
+          .sort((a, b) => {
             if (a.inside && !b.inside) return -1;
             if (!a.inside && b.inside) return 1;
             return a.distance - b.distance;
@@ -250,6 +314,7 @@ function extractPOIMetadata(tags) {
     if (tags.tourism) metadata.push(formatTagValue('tourism', tags.tourism));
     if (tags.historic) metadata.push(formatTagValue('historic', tags.historic));
     if (tags.amenity) metadata.push(formatTagValue('amenity', tags.amenity));
+    if (tags.railway) metadata.push(formatTagValue('railway', tags.railway));
     if (tags.man_made) metadata.push(formatTagValue('man_made', tags.man_made));
     if (tags.building && tags.building !== 'yes') metadata.push(formatTagValue('building', tags.building));
     if (tags.aeroway) metadata.push(formatTagValue('aeroway', tags.aeroway));
@@ -527,11 +592,22 @@ function addPOIMarkers(pois) {
         // Create popup content
         let popupContent = `<div class="marker-popup"><strong>${poi.name}</strong>`;
         if (poi.metadata) {
-            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${poi.metadata}</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.875rem;">${poi.metadata}</div>`;
         }
         if (poi.distance > 0) {
-            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(poi.distance)} from square</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #9ca3af; font-size: 0.8125rem;">${formatDistance(poi.distance)} from square</div>`;
         }
+
+        // Add tags
+        if (poi.tags && Object.keys(poi.tags).length > 0) {
+            popupContent += `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.75rem; color: #9ca3af;">`;
+            Object.entries(poi.tags).forEach(([key, value]) => {
+                popupContent += `<div><span style="color: #6b7280;">${key}:</span> ${value}</div>`;
+            });
+            popupContent += `</div>`;
+        }
+
+        popupContent += `<div style="margin-top: 0.5rem;"><a href="https://www.openstreetmap.org/${poi.osmType}/${poi.osmId}" target="_blank" rel="noopener" style="color: #3b82f6; font-size: 0.7rem; text-decoration: none;">OpenStreetMap →</a></div>`;
         popupContent += `</div>`;
 
         const marker = L.marker([poi.lat, poi.lon], { icon })
@@ -562,11 +638,22 @@ function addAmenityMarkers(amenities) {
         // Create popup content
         let popupContent = `<div class="marker-popup"><strong>${amenity.name}</strong>`;
         if (amenity.metadata) {
-            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${amenity.metadata}</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.875rem;">${amenity.metadata}</div>`;
         }
         if (amenity.distance > 0) {
-            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(amenity.distance)} from square</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #9ca3af; font-size: 0.8125rem;">${formatDistance(amenity.distance)} from square</div>`;
         }
+
+        // Add tags
+        if (amenity.tags && Object.keys(amenity.tags).length > 0) {
+            popupContent += `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.75rem; color: #9ca3af;">`;
+            Object.entries(amenity.tags).forEach(([key, value]) => {
+                popupContent += `<div><span style="color: #6b7280;">${key}:</span> ${value}</div>`;
+            });
+            popupContent += `</div>`;
+        }
+
+        popupContent += `<div style="margin-top: 0.5rem;"><a href="https://www.openstreetmap.org/${amenity.osmType}/${amenity.osmId}" target="_blank" rel="noopener" style="color: #3b82f6; font-size: 0.7rem; text-decoration: none;">OpenStreetMap →</a></div>`;
         popupContent += `</div>`;
 
         const marker = L.marker([amenity.lat, amenity.lon], { icon })
@@ -584,6 +671,21 @@ function addAmenityMarkers(amenities) {
 function selectPOI(index) {
     selectedPOIIndex = index;
     const poi = currentPOIs[index];
+
+    // Log all POI information
+    console.log('[POI Selected]', {
+        name: poi.name,
+        metadata: poi.metadata,
+        tags: poi.tags,
+        distance: poi.distance,
+        inside: poi.inside,
+        lat: poi.lat,
+        lon: poi.lon,
+        geometry: poi.geometry ? `${poi.geometry.length} points` : 'none',
+        osmType: poi.osmType,
+        osmId: poi.osmId,
+        osmUrl: `https://www.openstreetmap.org/${poi.osmType}/${poi.osmId}`
+    });
 
     // Clear amenity selection
     selectedAmenityIndex = null;
@@ -616,6 +718,25 @@ function selectPOI(index) {
         });
     }
 
+    // Clear all polygons
+    poiPolygons.forEach(polygon => map.removeLayer(polygon));
+    poiPolygons = [];
+    amenityPolygons.forEach(polygon => map.removeLayer(polygon));
+    amenityPolygons = [];
+
+    // Draw polygon for selected POI if available
+    if (poi.geometry && poi.geometry.length > 2) {
+        const color = getPOIColor(poi.tags);
+        const polygon = L.polygon(poi.geometry, {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.2,
+            weight: 2,
+            opacity: 0.7
+        }).addTo(map);
+        poiPolygons.push(polygon);
+    }
+
     // Highlight selected POI marker
     const selectedMarker = poiMarkers[index];
     if (selectedMarker) {
@@ -638,6 +759,21 @@ function selectPOI(index) {
 function selectAmenity(index) {
     selectedAmenityIndex = index;
     const amenity = currentAmenities[index];
+
+    // Log all amenity information
+    console.log('[Amenity Selected]', {
+        name: amenity.name,
+        metadata: amenity.metadata,
+        tags: amenity.tags,
+        distance: amenity.distance,
+        inside: amenity.inside,
+        lat: amenity.lat,
+        lon: amenity.lon,
+        geometry: amenity.geometry ? `${amenity.geometry.length} points` : 'none',
+        osmType: amenity.osmType,
+        osmId: amenity.osmId,
+        osmUrl: `https://www.openstreetmap.org/${amenity.osmType}/${amenity.osmId}`
+    });
 
     // Clear POI selection
     selectedPOIIndex = null;
@@ -670,6 +806,25 @@ function selectAmenity(index) {
         });
     }
 
+    // Clear all polygons
+    poiPolygons.forEach(polygon => map.removeLayer(polygon));
+    poiPolygons = [];
+    amenityPolygons.forEach(polygon => map.removeLayer(polygon));
+    amenityPolygons = [];
+
+    // Draw polygon for selected amenity if available
+    if (amenity.geometry && amenity.geometry.length > 2) {
+        const color = getAmenityColor(amenity.tags);
+        const polygon = L.polygon(amenity.geometry, {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.2,
+            weight: 2,
+            opacity: 0.7
+        }).addTo(map);
+        amenityPolygons.push(polygon);
+    }
+
     // Highlight selected amenity marker
     const selectedMarker = amenityMarkers[index];
     if (selectedMarker) {
@@ -690,9 +845,11 @@ function selectAmenity(index) {
  * Updates POI markers on map based on active filters
  */
 function updatePOIMapHighlighting() {
-    // Clear existing POI markers
+    // Clear existing POI markers and polygons
     poiMarkers.forEach(marker => map.removeLayer(marker));
     poiMarkers = [];
+    poiPolygons.forEach(polygon => map.removeLayer(polygon));
+    poiPolygons = [];
 
     // Determine which POIs to show
     let poisToShow = currentPOIs;
@@ -716,11 +873,22 @@ function updatePOIMapHighlighting() {
         // Create popup content
         let popupContent = `<div class="marker-popup"><strong>${poi.name}</strong>`;
         if (poi.metadata) {
-            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${poi.metadata}</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.875rem;">${poi.metadata}</div>`;
         }
         if (poi.distance > 0) {
-            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(poi.distance)} from square</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #9ca3af; font-size: 0.8125rem;">${formatDistance(poi.distance)} from square</div>`;
         }
+
+        // Add tags
+        if (poi.tags && Object.keys(poi.tags).length > 0) {
+            popupContent += `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.75rem; color: #9ca3af;">`;
+            Object.entries(poi.tags).forEach(([key, value]) => {
+                popupContent += `<div><span style="color: #6b7280;">${key}:</span> ${value}</div>`;
+            });
+            popupContent += `</div>`;
+        }
+
+        popupContent += `<div style="margin-top: 0.5rem;"><a href="https://www.openstreetmap.org/${poi.osmType}/${poi.osmId}" target="_blank" rel="noopener" style="color: #3b82f6; font-size: 0.7rem; text-decoration: none;">OpenStreetMap →</a></div>`;
         popupContent += `</div>`;
 
         const originalIndex = currentPOIs.indexOf(poi);
@@ -737,9 +905,11 @@ function updatePOIMapHighlighting() {
  * Updates amenity markers on map based on active filters
  */
 function updateAmenityMapHighlighting() {
-    // Clear existing amenity markers
+    // Clear existing amenity markers and polygons
     amenityMarkers.forEach(marker => map.removeLayer(marker));
     amenityMarkers = [];
+    amenityPolygons.forEach(polygon => map.removeLayer(polygon));
+    amenityPolygons = [];
 
     // Determine which amenities to show
     let amenitiesToShow = currentAmenities;
@@ -763,11 +933,22 @@ function updateAmenityMapHighlighting() {
         // Create popup content
         let popupContent = `<div class="marker-popup"><strong>${amenity.name}</strong>`;
         if (amenity.metadata) {
-            popupContent += `<br><span style="color: #6b7280; font-size: 0.875rem;">${amenity.metadata}</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #6b7280; font-size: 0.875rem;">${amenity.metadata}</div>`;
         }
         if (amenity.distance > 0) {
-            popupContent += `<br><span style="color: #9ca3af; font-size: 0.8125rem;">${formatDistance(amenity.distance)} from square</span>`;
+            popupContent += `<div style="margin-top: 0.25rem; color: #9ca3af; font-size: 0.8125rem;">${formatDistance(amenity.distance)} from square</div>`;
         }
+
+        // Add tags
+        if (amenity.tags && Object.keys(amenity.tags).length > 0) {
+            popupContent += `<div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.75rem; color: #9ca3af;">`;
+            Object.entries(amenity.tags).forEach(([key, value]) => {
+                popupContent += `<div><span style="color: #6b7280;">${key}:</span> ${value}</div>`;
+            });
+            popupContent += `</div>`;
+        }
+
+        popupContent += `<div style="margin-top: 0.5rem;"><a href="https://www.openstreetmap.org/${amenity.osmType}/${amenity.osmId}" target="_blank" rel="noopener" style="color: #3b82f6; font-size: 0.7rem; text-decoration: none;">OpenStreetMap →</a></div>`;
         popupContent += `</div>`;
 
         const originalIndex = currentAmenities.indexOf(amenity);
@@ -799,6 +980,31 @@ function highlightMarker(marker, type) {
 }
 
 /**
+ * Returns color for POI based on tags
+ */
+function getPOIColor(tags) {
+    if (tags.leisure === 'park' || tags.leisure === 'garden') return '#059669';
+    if (tags.tourism === 'museum') return '#8b5cf6';
+    if (tags.historic === 'memorial' || tags.historic === 'monument') return '#6b7280';
+    if (tags.amenity === 'library') return '#0891b2';
+    if (tags.amenity === 'university') return '#0891b2';
+    if (tags.amenity === 'theatre') return '#ec4899';
+    if (tags.amenity === 'cinema') return '#dc2626';
+    if (tags.tourism === 'attraction') return '#f59e0b';
+    if (tags.tourism === 'viewpoint') return '#3b82f6';
+    if (tags.natural === 'peak') return '#78716c';
+    if (tags.natural === 'water' || tags.waterway) return '#0284c7';
+    if (tags.railway === 'level_crossing' || tags.railway === 'crossing') return '#6b7280';
+    if (tags.aeroway) return '#0284c7';
+    if (tags.man_made === 'bridge' || tags.bridge) return '#6b7280';
+    if (tags.building) return '#6b7280';
+    if (tags.historic) return '#92400e';
+    if (tags.leisure) return '#059669';
+    if (tags.tourism) return '#f59e0b';
+    return '#6b7280';
+}
+
+/**
  * Returns icon HTML for POI based on tags
  */
 function getPOIIcon(tags) {
@@ -811,7 +1017,7 @@ function getPOIIcon(tags) {
     } else if (tags.tourism === 'museum') {
         icon = 'museum'; color = '#8b5cf6';
     } else if (tags.historic === 'memorial' || tags.historic === 'monument') {
-        icon = 'chess_rook'; color = '#6b7280';
+        icon = 'military_tech'; color = '#6b7280';
     } else if (tags.amenity === 'library') {
         icon = 'local_library'; color = '#0891b2';
     } else if (tags.amenity === 'university') {
@@ -828,10 +1034,12 @@ function getPOIIcon(tags) {
         icon = 'terrain'; color = '#78716c';
     } else if (tags.natural === 'water' || tags.waterway) {
         icon = 'water'; color = '#0284c7';
+    } else if (tags.railway === 'level_crossing' || tags.railway === 'crossing') {
+        icon = 'directions_walk'; color = '#6b7280';
     } else if (tags.aeroway) {
         icon = 'flight'; color = '#0284c7';
     } else if (tags.man_made === 'bridge' || tags.bridge) {
-        icon = 'flyover'; color = '#6b7280';
+        icon = 'pergola'; color = '#6b7280';
     } else if (tags.building) {
         icon = 'domain'; color = '#6b7280';
     } else if (tags.historic) {
@@ -843,6 +1051,17 @@ function getPOIIcon(tags) {
     }
 
     return `<span class="material-symbols-outlined station-icon" style="color: ${color};">${icon}</span>`;
+}
+
+/**
+ * Returns color for amenity based on tags
+ */
+function getAmenityColor(tags) {
+    if (tags.amenity === 'drinking_water') return '#0284c7';
+    if (tags.amenity === 'cafe') return '#92400e';
+    if (tags.amenity === 'hotel') return '#7c3aed';
+    if (tags.amenity === 'toilets') return '#0891b2';
+    return '#6b7280';
 }
 
 /**
@@ -878,7 +1097,7 @@ function getPOIMarkerIcon(tags) {
     } else if (tags.tourism === 'museum') {
         icon = 'museum'; color = '#8b5cf6';
     } else if (tags.historic === 'memorial' || tags.historic === 'monument') {
-        icon = 'chess_rook'; color = '#6b7280';
+        icon = 'military_tech'; color = '#6b7280';
     } else if (tags.amenity === 'library') {
         icon = 'local_library'; color = '#0891b2';
     } else if (tags.amenity === 'university') {
@@ -895,10 +1114,12 @@ function getPOIMarkerIcon(tags) {
         icon = 'terrain'; color = '#78716c';
     } else if (tags.natural === 'water' || tags.waterway) {
         icon = 'water'; color = '#0284c7';
+    } else if (tags.railway === 'level_crossing' || tags.railway === 'crossing') {
+        icon = 'directions_walk'; color = '#6b7280';
     } else if (tags.aeroway) {
         icon = 'flight'; color = '#0284c7';
     } else if (tags.man_made === 'bridge' || tags.bridge) {
-        icon = 'flyover'; color = '#6b7280';
+        icon = 'pergola'; color = '#6b7280';
     } else if (tags.building) {
         icon = 'domain'; color = '#6b7280';
     } else if (tags.historic) {
