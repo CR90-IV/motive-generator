@@ -3,34 +3,73 @@
 // ========================================
 
 /**
- * Fetches from Overpass API with retry logic for 504/429 errors
+ * Available Overpass API instances for load balancing and failover
  */
-async function fetchOverpassWithRetry(query, requestId, contentElement, retryCount = 0) {
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
+const OVERPASS_INSTANCES = [
+    { url: 'https://overpass-api.de/api/interpreter', name: 'Germany' },
+    { url: 'https://overpass.private.coffee/api/interpreter', name: 'Private Coffee' },
+    { url: 'https://overpass.osm.jp/api/interpreter', name: 'Japan' }
+];
+
+let currentInstanceIndex = 0;
+
+/**
+ * Gets the next Overpass instance in rotation
+ */
+function getNextOverpassInstance() {
+    currentInstanceIndex = (currentInstanceIndex + 1) % OVERPASS_INSTANCES.length;
+    return OVERPASS_INSTANCES[currentInstanceIndex];
+}
+
+/**
+ * Gets the current Overpass instance
+ */
+function getCurrentOverpassInstance() {
+    return OVERPASS_INSTANCES[currentInstanceIndex];
+}
+
+/**
+ * Fetches from Overpass API with retry logic for 504/429 errors
+ * Rotates between instances on rate limiting
+ */
+async function fetchOverpassWithRetry(query, requestId, contentElement, retryCount = 0, instanceIndex = currentInstanceIndex) {
+    const instance = OVERPASS_INSTANCES[instanceIndex];
+
+    console.log(`[Overpass Query #${requestId}] Using ${instance.name} server (attempt ${retryCount + 1})`);
+
+    const response = await fetch(instance.url, {
         method: 'POST',
         body: query
     });
 
     console.log(`[Overpass Query #${requestId}] Response status: ${response.status} ${response.statusText}`);
 
-    if ((response.status === 504 || response.status === 429) && retryCount === 0) {
-        const delayMs = response.status === 429 ? 3000 : 2000;
+    // Handle rate limiting or timeout - try next instance
+    if ((response.status === 504 || response.status === 429) && retryCount < OVERPASS_INSTANCES.length) {
+        const delayMs = response.status === 429 ? 2000 : 1500;
         const delaySec = delayMs / 1000;
         const errorType = response.status === 429 ? 'Rate limited' : 'Server timeout';
 
-        console.log(`[Overpass Query #${requestId}] ${errorType}, waiting ${delaySec}s before retry`);
+        // Get next instance
+        const nextInstanceIndex = (instanceIndex + 1) % OVERPASS_INSTANCES.length;
+        const nextInstance = OVERPASS_INSTANCES[nextInstanceIndex];
+
+        console.log(`[Overpass Query #${requestId}] ${errorType} on ${instance.name}, rotating to ${nextInstance.name} in ${delaySec}s`);
 
         if (contentElement) {
-            contentElement.innerHTML = `<p class="loading">${errorType}, retrying in ${delaySec}s<span class="loading-dots"></span></p>`;
+            contentElement.innerHTML = `<p class="loading">${errorType}, switching to ${nextInstance.name} server<span class="loading-dots"></span></p>`;
         }
 
         await new Promise(resolve => setTimeout(resolve, delayMs));
 
         if (contentElement) {
-            contentElement.innerHTML = '<p class="loading">Retrying search<span class="loading-dots"></span></p>';
+            contentElement.innerHTML = `<p class="loading">Retrying with ${nextInstance.name} server<span class="loading-dots"></span></p>`;
         }
 
-        return fetchOverpassWithRetry(query, requestId, contentElement, retryCount + 1);
+        // Update global instance index for next query
+        currentInstanceIndex = nextInstanceIndex;
+
+        return fetchOverpassWithRetry(query, requestId, contentElement, retryCount + 1, nextInstanceIndex);
     }
 
     if (!response.ok) {
@@ -61,10 +100,24 @@ function calculateSearchBounds(easting, northing, squareSize, bufferKm = 2) {
 
 /**
  * Fetches all data (stations, POIs, amenities) in a single Overpass query
+ * @param {Object} contentElements - Optional content elements for loading messages
  */
-async function fetchAllNearbyData(easting, northing, squareSize, requestId) {
+async function fetchAllNearbyData(easting, northing, squareSize, requestId, contentElements = null) {
     const bounds = calculateSearchBounds(easting, northing, squareSize);
     const { south, north, west, east, sw, ne } = bounds;
+
+    // Show initial loading message
+    if (contentElements) {
+        if (contentElements.stations) {
+            contentElements.stations.innerHTML = '<p class="loading">Searching nearby stations<span class="loading-dots"></span></p>';
+        }
+        if (contentElements.pois) {
+            contentElements.pois.innerHTML = '<p class="loading">Searching places<span class="loading-dots"></span></p>';
+        }
+        if (contentElements.amenities) {
+            contentElements.amenities.innerHTML = '<p class="loading">Searching amenities<span class="loading-dots"></span></p>';
+        }
+    }
 
     // Combined query for all data types
     const query = `
@@ -74,10 +127,10 @@ async function fetchAllNearbyData(easting, northing, squareSize, requestId) {
             node["railway"="station"]["name"](${south},${west},${north},${east});
             node["railway"="halt"]["name"](${south},${west},${north},${east});
 
-            /* POIs - Leisure (excluding fitness_centre and sports_centre) */
-            node["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre"](${south},${west},${north},${east});
-            way["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre"](${south},${west},${north},${east});
-            rel["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre"](${south},${west},${north},${east});
+            /* POIs - Leisure (excluding fitness_centre, sports_centre, adult_gaming_centre) */
+            node["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre|adult_gaming_centre"](${south},${west},${north},${east});
+            way["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre|adult_gaming_centre"](${south},${west},${north},${east});
+            rel["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre|adult_gaming_centre"](${south},${west},${north},${east});
 
             /* POIs - Natural features */
             node["natural"="peak"]["name"](${south},${west},${north},${east});
@@ -106,9 +159,22 @@ async function fetchAllNearbyData(easting, northing, squareSize, requestId) {
             rel["amenity"~"library|university|arts_centre|community_centre|conference_centre|events_venue|exhibition_centre"]["name"](${south},${west},${north},${east});
 
             /* POIs - Misc amenities */
-            node["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace"]["name"](${south},${west},${north},${east});
-            way["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace"]["name"](${south},${west},${north},${east});
-            rel["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace"]["name"](${south},${west},${north},${east});
+            node["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace|studio"]["name"](${south},${west},${north},${east});
+            way["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace|studio"]["name"](${south},${west},${north},${east});
+            rel["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace|studio"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Government offices */
+            node["office"="government"]["name"](${south},${west},${north},${east});
+            way["office"="government"]["name"](${south},${west},${north},${east});
+            rel["office"="government"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Military */
+            node["landuse"="military"]["name"](${south},${west},${north},${east});
+            way["landuse"="military"]["name"](${south},${west},${north},${east});
+            rel["landuse"="military"]["name"](${south},${west},${north},${east});
+            node["military"]["name"](${south},${west},${north},${east});
+            way["military"]["name"](${south},${west},${north},${east});
+            rel["military"]["name"](${south},${west},${north},${east});
 
             /* POIs - Shops */
             node["shop"~"mall|department_store"]["name"](${south},${west},${north},${east});
@@ -143,7 +209,9 @@ async function fetchAllNearbyData(easting, northing, squareSize, requestId) {
     `;
 
     console.log(`[Overpass Query #${requestId}] Sending combined query`);
-    const data = await fetchOverpassWithRetry(query, requestId, null);
+    // Use stations element for retry messages since it's a combined query
+    const retryElement = contentElements?.stations || null;
+    const data = await fetchOverpassWithRetry(query, requestId, retryElement);
     console.log(`[Overpass Query #${requestId}] Found ${data.elements?.length || 0} total elements`);
 
     // Categorize results

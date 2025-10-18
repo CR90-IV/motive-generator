@@ -21,25 +21,28 @@ const POI_CONFIG = [
     { check: (t) => t.amenity === 'cinema', icon: 'local_movies', color: '#dc2626' },
     { check: (t) => t.amenity === 'arts_centre', icon: 'palette', color: '#ec4899' },
     { check: (t) => t.amenity === 'community_centre', icon: 'groups', color: '#0891b2' },
-    { check: (t) => t.amenity === 'conference_centre', icon: 'meeting_room', color: '#6b7280' },
-    { check: (t) => t.amenity === 'events_venue', icon: 'celebration', color: '#f59e0b' },
-    { check: (t) => t.amenity === 'exhibition_centre', icon: 'museum', color: '#8b5cf6' },
+    { check: (t) => t.amenity === 'conference_centre', icon: 'podium', color: '#6b7280' },
+    { check: (t) => t.amenity === 'events_venue', icon: 'podium', color: '#6b7280' },
+    { check: (t) => t.amenity === 'exhibition_centre', icon: 'podium', color: '#6b7280' },
     { check: (t) => t.amenity === 'fountain', icon: 'sprinkler', color: '#0284c7' },
     { check: (t) => t.amenity === 'public_bookcase', icon: 'book', color: '#0891b2' },
     { check: (t) => t.amenity === 'stage', icon: 'podium', color: '#ec4899' },
     { check: (t) => t.amenity === 'townhall', icon: 'account_balance', color: '#6b7280' },
     { check: (t) => t.amenity === 'marketplace', icon: 'storefront', color: '#f59e0b' },
+    { check: (t) => t.amenity === 'studio', icon: 'movie', color: '#ec4899' },
+    { check: (t) => t.office === 'government', icon: 'account_balance', color: '#6b7280' },
+    { check: (t) => t.landuse === 'military' || t.military, icon: 'shield', color: '#78716c' },
     { check: (t) => t.shop === 'mall' || t.shop === 'department_store', icon: 'local_mall', color: '#ec4899' },
     { check: (t) => t.tourism === 'attraction', icon: 'attractions', color: '#f59e0b' },
     { check: (t) => t.tourism === 'viewpoint', icon: 'visibility', color: '#3b82f6' },
     { check: (t) => t.natural === 'peak', icon: 'terrain', color: '#78716c' },
     { check: (t) => t.natural === 'water' || t.waterway, icon: 'water', color: '#0284c7' },
     { check: (t) => t.railway === 'level_crossing' || t.railway === 'crossing', icon: 'directions_walk', color: '#6b7280' },
-    { check: (t) => t.aeroway, icon: 'flight', color: '#0284c7' },
+    { check: (t) => t.aeroway, icon: 'travel', color: '#0284c7' },
     { check: (t) => t.man_made === 'bridge' || t.bridge, icon: 'pergola', color: '#6b7280' },
     { check: (t) => t.building, icon: 'domain', color: '#6b7280' },
     { check: (t) => t.historic, icon: 'history_edu', color: '#92400e' },
-    { check: (t) => t.leisure, icon: 'sports_soccer', color: '#059669' },
+    { check: (t) => t.leisure, icon: 'golf_course', color: '#059669' },
     { check: (t) => t.shop, icon: 'shopping_bag', color: '#f59e0b' },
     { check: (t) => t.tourism, icon: 'tour', color: '#f59e0b' }
 ];
@@ -141,6 +144,9 @@ function extractMetadata(tags) {
     if (tags.tourism) metadata.push(formatTagValue('tourism', tags.tourism));
     if (tags.historic) metadata.push(formatTagValue('historic', tags.historic));
     if (tags.amenity) metadata.push(formatTagValue('amenity', tags.amenity));
+    if (tags.office) metadata.push(formatTagValue('office', tags.office));
+    if (tags.military) metadata.push(formatTagValue('military', tags.military));
+    if (tags.landuse === 'military') metadata.push('Military');
     if (tags.railway) metadata.push(formatTagValue('railway', tags.railway));
     if (tags.man_made) metadata.push(formatTagValue('man_made', tags.man_made));
     if (tags.building && tags.building !== 'yes') metadata.push(formatTagValue('building', tags.building));
@@ -161,8 +167,11 @@ function getDefaultName(tags) {
     if (tags.amenity === 'toilets') return 'Public Toilets';
     if (tags.amenity === 'fountain') return 'Fountain';
     if (tags.amenity === 'public_bookcase') return 'Public Bookcase';
+    if (tags.amenity === 'studio') return 'Studio';
     if (tags.amenity === 'cafe') return 'Cafe';
     if (tags.amenity === 'hotel' || tags.tourism === 'hotel') return 'Hotel';
+    if (tags.office === 'government') return 'Government Office';
+    if (tags.landuse === 'military' || tags.military) return 'Military Area';
     return null;
 }
 

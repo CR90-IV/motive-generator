@@ -262,7 +262,15 @@ function showSquare(easting, northing, squareSize = 1000) {
 async function fetchAllData(easting, northing, squareSize) {
     try {
         const requestId = Date.now();
-        const data = await fetchAllNearbyData(easting, northing, squareSize, requestId);
+
+        // Get content elements for loading messages
+        const contentElements = {
+            stations: document.getElementById('stations-content'),
+            pois: document.getElementById('poi-content'),
+            amenities: document.getElementById('amenities-content')
+        };
+
+        const data = await fetchAllNearbyData(easting, northing, squareSize, requestId, contentElements);
 
         const { stations, pois, amenities, bounds } = data;
 

@@ -109,7 +109,10 @@ function updateURL(gridRef, areaId) {
 
     // Only add area parameter if it's not the default
     if (areaId && areaId !== 'greater-london') {
-        url.searchParams.set('area', areaId);
+        // For custom areas, extract just the OSM ID
+        const osmIdMatch = areaId.match(/^custom-(\d+)$/);
+        const urlAreaId = osmIdMatch ? osmIdMatch[1] : areaId;
+        url.searchParams.set('area', urlAreaId);
     } else {
         url.searchParams.delete('area');
     }
@@ -135,24 +138,42 @@ async function loadFromURL() {
             console.log(`[URL Load] Loading preset area: ${areaParam}`);
             selectArea(areaParam);
         } else {
-            // Check if it's a custom area ID (format: custom-123456)
-            const customMatch = areaParam.match(/^custom-(\d+)$/);
+            // Check if it's a numeric OSM ID (format: 123456 or custom-123456)
+            const customMatch = areaParam.match(/^(?:custom-)?(\d+)$/);
             if (customMatch) {
                 const relationId = parseInt(customMatch[1]);
+                const customAreaId = `custom-${relationId}`;
                 console.log(`[URL Load] Loading custom area from relation: ${relationId}`);
 
-                // We need to fetch this custom boundary
                 // Show loading message
                 showToast('Loading area from URL...');
 
                 try {
+                    // Fetch boundary and name from OSM
                     const boundary = await fetchOSMBoundary(relationId);
 
-                    // We don't have the name, so we'll need to fetch it
-                    // For now, use a generic name
-                    const areaName = `Custom Area ${relationId}`;
+                    // Fetch the name from OSM tags
+                    let areaName = `Area ${relationId}`;
+                    try {
+                        const nameQuery = `
+                            [out:json][timeout:10];
+                            relation(${relationId});
+                            out tags;
+                        `;
+                        const instance = getCurrentOverpassInstance();
+                        const nameResponse = await fetch(instance.url, {
+                            method: 'POST',
+                            body: nameQuery
+                        });
+                        const nameData = await nameResponse.json();
+                        if (nameData.elements && nameData.elements[0] && nameData.elements[0].tags) {
+                            areaName = nameData.elements[0].tags.name || areaName;
+                        }
+                    } catch (nameError) {
+                        console.warn('[URL Load] Could not fetch area name:', nameError);
+                    }
 
-                    AREA_REGIONS[areaParam] = {
+                    AREA_REGIONS[customAreaId] = {
                         name: areaName,
                         osmRelationId: relationId,
                         boundary: boundary,
@@ -161,9 +182,9 @@ async function loadFromURL() {
                     };
 
                     // Add to dropdown
-                    addCustomAreaToDropdown(areaParam, areaName);
+                    addCustomAreaToDropdown(customAreaId, areaName);
 
-                    currentAreaId = areaParam;
+                    currentAreaId = customAreaId;
                     document.getElementById('area-name').textContent = areaName;
 
                     // Clear active state from preset buttons
@@ -172,7 +193,7 @@ async function loadFromURL() {
                     });
 
                     // Set active on custom button
-                    const customBtn = document.querySelector(`.area-preset-btn[data-area="${areaParam}"]`);
+                    const customBtn = document.querySelector(`.area-preset-btn[data-area="${customAreaId}"]`);
                     if (customBtn) {
                         customBtn.classList.add('active');
                     }
@@ -182,7 +203,7 @@ async function loadFromURL() {
                         drawAreaBoundary(boundary, 'polygon');
                     }
 
-                    console.log(`[URL Load] Custom area loaded`);
+                    console.log(`[URL Load] Custom area loaded: ${areaName}`);
                 } catch (error) {
                     console.error('[URL Load] Failed to load custom area:', error);
                     showToast('Failed to load area from URL');

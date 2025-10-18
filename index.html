@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>London Motive Generator</title>
+    <title>Motive Generator</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="styles.css">
@@ -11,7 +11,7 @@
 <body>
     <!-- Sticky header -->
     <header class="app-header">
-        <h1>London Motive Generator</h1>
+        <h1><a href="index.html" class="header-link">Motive Generator</a></h1>
         <div class="header-controls">
             <button id="area-pill" class="area-pill" aria-label="Select area">
                 <span class="area-label">Area: <span id="area-name">Greater London</span></span>
@@ -43,16 +43,16 @@
     <div id="area-dropdown" class="area-dropdown hidden">
         <div class="area-dropdown-content">
             <div class="area-presets">
-                <button class="area-preset-btn" data-area="city-of-london">
-                    <span class="material-symbols-outlined">location_city</span>
-                    <span>City of London</span>
+                <button class="area-preset-btn" data-area="central-london">
+                    <span>Central London (Congestion Zone)</span>
+                </button>
+                <button class="area-preset-btn" data-area="zone-1-2">
+                    <span>Central London (Zones 1-2)</span>
                 </button>
                 <button class="area-preset-btn active" data-area="greater-london">
-                    <span class="material-symbols-outlined">apartment</span>
                     <span>Greater London</span>
                 </button>
                 <button class="area-preset-btn" data-area="united-kingdom">
-                    <span class="material-symbols-outlined">public</span>
                     <span>United Kingdom</span>
                 </button>
             </div>
@@ -86,7 +86,7 @@
             <!-- Summary section -->
             <section class="sheet-section summary-section">
                 <div class="grid-ref-container">
-                    <label for="grid-ref-input">Grid Reference</label>
+                    <label for="grid-ref-input">OS Grid Reference</label>
                     <input
                         type="text"
                         id="grid-ref-input"

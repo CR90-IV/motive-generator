@@ -413,10 +413,17 @@ const UK_BOUNDS = {
  * Available geographic regions for selection
  */
 const AREA_REGIONS = {
-    'city-of-london': {
-        name: 'City of London',
-        osmRelationId: 51800,
-        boundary: CITY_OF_LONDON_POLYGON, // Fallback
+    'zone-1-2': {
+        name: 'Central London (Zones 1-2)',
+        boundary: CENTRAL_LONDON_POLYGON, // Fallback until loaded
+        type: 'polygon',
+        loading: false,
+        dynamicBoundary: true // Mark as dynamically generated
+    },
+    'central-london': {
+        name: 'Central London (Congestion Zone)',
+        osmRelationId: 3045928,
+        boundary: CENTRAL_LONDON_POLYGON, // Fallback
         type: 'polygon',
         loading: false
     },
@@ -437,6 +444,170 @@ const AREA_REGIONS = {
 };
 
 /**
+ * Computes convex hull from array of points using Graham scan
+ * @param {Array} points - Array of [easting, northing] coordinates
+ * @returns {Array} - Convex hull as array of points
+ */
+function convexHull(points) {
+    if (points.length < 3) return points;
+
+    // Sort points by x, then y
+    const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+    // Build lower hull
+    const lower = [];
+    for (let i = 0; i < sorted.length; i++) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], sorted[i]) <= 0) {
+            lower.pop();
+        }
+        lower.push(sorted[i]);
+    }
+
+    // Build upper hull
+    const upper = [];
+    for (let i = sorted.length - 1; i >= 0; i--) {
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], sorted[i]) <= 0) {
+            upper.pop();
+        }
+        upper.push(sorted[i]);
+    }
+
+    // Remove last point of each half because it's repeated
+    lower.pop();
+    upper.pop();
+
+    const hull = lower.concat(upper);
+
+    // Ensure the hull is closed by adding the first point at the end if needed
+    if (hull.length > 0 && (hull[0][0] !== hull[hull.length - 1][0] || hull[0][1] !== hull[hull.length - 1][1])) {
+        hull.push(hull[0]);
+    }
+
+    return hull;
+}
+
+/**
+ * Cross product helper for convex hull
+ */
+function cross(o, a, b) {
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+/**
+ * Buffers a polygon by adding distance around it
+ * @param {Array} polygon - Array of [easting, northing] coordinates
+ * @param {number} bufferMeters - Buffer distance in meters
+ * @returns {Array} - Buffered polygon
+ */
+function bufferPolygon(polygon, bufferMeters) {
+    // Simple buffer: for each point, calculate normal and offset
+    const buffered = [];
+
+    for (let i = 0; i < polygon.length; i++) {
+        const curr = polygon[i];
+        const prev = polygon[(i - 1 + polygon.length) % polygon.length];
+        const next = polygon[(i + 1) % polygon.length];
+
+        // Calculate vectors
+        const v1 = [curr[0] - prev[0], curr[1] - prev[1]];
+        const v2 = [next[0] - curr[0], next[1] - curr[1]];
+
+        // Normalize
+        const len1 = Math.sqrt(v1[0] * v1[0] + v1[1] * v1[1]);
+        const len2 = Math.sqrt(v2[0] * v2[0] + v2[1] * v2[1]);
+
+        if (len1 > 0) {
+            v1[0] /= len1;
+            v1[1] /= len1;
+        }
+        if (len2 > 0) {
+            v2[0] /= len2;
+            v2[1] /= len2;
+        }
+
+        // Average normal (perpendicular)
+        const normal = [-(v1[1] + v2[1]) / 2, (v1[0] + v2[0]) / 2];
+        const normalLen = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1]);
+
+        if (normalLen > 0) {
+            normal[0] /= normalLen;
+            normal[1] /= normalLen;
+        }
+
+        // Offset point
+        buffered.push([
+            Math.round(curr[0] + normal[0] * bufferMeters),
+            Math.round(curr[1] + normal[1] * bufferMeters)
+        ]);
+    }
+
+    // Close the polygon by adding the first point at the end
+    if (buffered.length > 0) {
+        buffered.push(buffered[0]);
+    }
+
+    return buffered;
+}
+
+/**
+ * Generates Zone 1-2 boundary from station locations
+ */
+async function generateZone12Boundary() {
+    console.log('[Zone 1-2] Generating boundary from station data...');
+
+    try {
+        // Query all London stations in zones 1-2 using bounding box
+        // Greater London bbox approximately: 51.28-51.69N, 0.49W-0.34E
+        const query = `
+            [out:json][timeout:30];
+            (
+                node["railway"="station"]["fare_zone"~"^[12]$"](51.28,-0.49,51.69,0.34);
+            );
+            out body;
+        `;
+
+        console.log('[Zone 1-2] Fetching stations...');
+        const instance = getCurrentOverpassInstance();
+        console.log(`[Zone 1-2] Using ${instance.name} server`);
+        const response = await fetch(instance.url, {
+            method: 'POST',
+            body: query
+        });
+
+        const data = await response.json();
+        console.log(`[Zone 1-2] Found ${data.elements?.length || 0} stations`);
+
+        if (!data.elements || data.elements.length < 3) {
+            console.warn('[Zone 1-2] Not enough stations found, using fallback');
+            return CENTRAL_LONDON_POLYGON;
+        }
+
+        // Convert stations to OS Grid coordinates
+        const points = data.elements
+            .filter(station => station.lat && station.lon)
+            .map(station => {
+                const coords = latLonToOSGrid(station.lat, station.lon);
+                return [coords.easting, coords.northing];
+            });
+
+        console.log(`[Zone 1-2] Converted ${points.length} stations to OS Grid`);
+
+        // Compute convex hull
+        const hull = convexHull(points);
+        console.log(`[Zone 1-2] Computed convex hull with ${hull.length} points`);
+
+        // Buffer by 500m
+        const buffered = bufferPolygon(hull, 500);
+        console.log(`[Zone 1-2] Buffered boundary to ${buffered.length} points`);
+
+        return buffered;
+    } catch (error) {
+        console.error('[Zone 1-2] Error generating boundary:', error);
+        return CENTRAL_LONDON_POLYGON; // Fallback
+    }
+}
+
+/**
  * Loads OSM boundaries for all preset regions
  * This runs asynchronously in the background
  */
@@ -444,18 +615,46 @@ async function loadPresetBoundaries() {
     for (const areaId in AREA_REGIONS) {
         const region = AREA_REGIONS[areaId];
 
-        if (region.osmRelationId && !region.loading) {
+        if (!region.loading && (region.osmRelationId || region.osmRelationIds || region.dynamicBoundary)) {
             region.loading = true;
 
             try {
-                console.log(`[Boundaries] Loading ${region.name}...`);
-                const boundary = await fetchOSMBoundary(region.osmRelationId);
+                let boundary;
+
+                if (region.dynamicBoundary && areaId === 'zone-1-2') {
+                    // Dynamically generate Zone 1-2 boundary from station data
+                    console.log(`[Boundaries] Generating ${region.name}...`);
+                    boundary = await generateZone12Boundary();
+                    console.log(`[Boundaries] Generated ${region.name}: ${boundary.length} points`);
+                } else if (region.osmRelationIds) {
+                    // Multiple relations to merge
+                    console.log(`[Boundaries] Loading ${region.name} from ${region.osmRelationIds.length} relations...`);
+                    const boundaries = [];
+
+                    for (const relationId of region.osmRelationIds) {
+                        console.log(`[Boundaries] Fetching relation ${relationId}...`);
+                        const singleBoundary = await fetchOSMBoundary(relationId);
+                        boundaries.push(singleBoundary);
+                        console.log(`[Boundaries] Fetched ${singleBoundary.length} points from relation ${relationId}`);
+                    }
+
+                    // Merge all boundaries by concatenating points
+                    boundary = [];
+                    boundaries.forEach(b => {
+                        boundary = boundary.concat(b);
+                    });
+
+                    console.log(`[Boundaries] Merged ${boundaries.length} boundaries into ${boundary.length} total points`);
+                } else {
+                    // Single relation
+                    console.log(`[Boundaries] Loading ${region.name}...`);
+                    boundary = await fetchOSMBoundary(region.osmRelationId);
+                    console.log(`[Boundaries] Loaded ${region.name}: ${boundary.length} points`);
+                }
 
                 // Update the region with the fetched boundary
                 region.boundary = boundary;
                 region.type = 'polygon';
-
-                console.log(`[Boundaries] Loaded ${region.name}: ${boundary.length} points`);
 
                 // Redraw boundary if this is the currently selected area
                 if (typeof currentAreaId !== 'undefined' && currentAreaId === areaId && typeof drawAreaBoundary === 'function') {

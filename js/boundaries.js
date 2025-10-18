@@ -2,8 +2,6 @@
 // OSM Boundary Fetching and Management
 // ========================================
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-
 /**
  * Fetches an OSM boundary polygon by relation ID
  * @param {number} relationId - OSM relation ID
@@ -125,8 +123,9 @@ async function searchOSMBoundaries(searchTerm) {
     console.log(`[Boundary Search] Query:`, query);
 
     try {
-        console.log(`[Boundary Search] Fetching from Overpass API...`);
-        const response = await fetch(OVERPASS_URL, {
+        const instance = getCurrentOverpassInstance();
+        console.log(`[Boundary Search] Fetching from Overpass API (${instance.name})...`);
+        const response = await fetch(instance.url, {
             method: 'POST',
             body: `data=${encodeURIComponent(query)}`
         });
