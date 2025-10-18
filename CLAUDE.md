@@ -108,10 +108,3 @@ Scripts are loaded in dependency order:
 1. Core: `utils.js`, `grid.js`
 2. Shared: `geometry.js`, `icons.js`, `overpass.js`, `markers.js`
 3. Features: `map.js`, `stations.js`, `pois.js`, `ui.js`
-
-# TODO
-- If overpass provides a geographical extent for the thing (not just a single lat/lon coordinate), then show that.
-- Improve filters: add ability to hide/show the filter panel; when selecting a filter highlight those elements on the map
-- better highlighting of locations
-- fix the surrounding area search: this is too large
-- in mobile mode, clicking on a location in the listing should bring focus back to that point on the map

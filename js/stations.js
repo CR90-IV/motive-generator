@@ -224,8 +224,15 @@ function selectStation(index) {
     clearAllMarkerHighlights([stationMarkers, poiMarkers, amenityMarkers]);
     clearPolygons();
 
-    // Highlight selected station marker
-    highlightMarker(stationMarkers[index]);
+    // Highlight selected station marker and bring to front
+    const marker = stationMarkers[index];
+    highlightMarker(marker);
+    if (marker && marker.getElement) {
+        const element = marker.getElement();
+        if (element) {
+            element.style.zIndex = 1000;
+        }
+    }
 
     // Center map on station
     map.panTo([station.lat, station.lon]);

@@ -63,7 +63,7 @@ function setupGridRefInput() {
             const squareSize = parsed.precision;
             const normalizedGridRef = value.toUpperCase().replace(/\s/g, '');
             showSquare(parsed.easting, parsed.northing, squareSize);
-            updateURL(normalizedGridRef);
+            updateURL(normalizedGridRef, currentAreaId);
         } else {
             // Invalid grid reference
             input.classList.add('error');
@@ -101,21 +101,97 @@ function setupGridRefInput() {
 // ========================================
 
 /**
- * Updates URL with grid reference parameter
+ * Updates URL with grid reference and area parameters
  */
-function updateURL(gridRef) {
+function updateURL(gridRef, areaId) {
     const url = new URL(window.location.href);
     url.searchParams.set('grid', gridRef);
+
+    // Only add area parameter if it's not the default
+    if (areaId && areaId !== 'greater-london') {
+        url.searchParams.set('area', areaId);
+    } else {
+        url.searchParams.delete('area');
+    }
+
     window.history.replaceState({}, '', url.toString());
+    console.log(`[URL] Updated URL with grid=${gridRef}, area=${areaId || 'default'}`);
 }
 
 /**
- * Loads grid square from URL parameter
+ * Loads area and grid square from URL parameters
  */
-function loadFromURL() {
+async function loadFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     const gridParam = urlParams.get('grid');
+    const areaParam = urlParams.get('area');
 
+    console.log(`[URL Load] Grid param: ${gridParam}, Area param: ${areaParam}`);
+
+    // Load area first if specified
+    if (areaParam) {
+        // Check if it's a preset area
+        if (AREA_REGIONS[areaParam]) {
+            console.log(`[URL Load] Loading preset area: ${areaParam}`);
+            selectArea(areaParam);
+        } else {
+            // Check if it's a custom area ID (format: custom-123456)
+            const customMatch = areaParam.match(/^custom-(\d+)$/);
+            if (customMatch) {
+                const relationId = parseInt(customMatch[1]);
+                console.log(`[URL Load] Loading custom area from relation: ${relationId}`);
+
+                // We need to fetch this custom boundary
+                // Show loading message
+                showToast('Loading area from URL...');
+
+                try {
+                    const boundary = await fetchOSMBoundary(relationId);
+
+                    // We don't have the name, so we'll need to fetch it
+                    // For now, use a generic name
+                    const areaName = `Custom Area ${relationId}`;
+
+                    AREA_REGIONS[areaParam] = {
+                        name: areaName,
+                        osmRelationId: relationId,
+                        boundary: boundary,
+                        type: 'polygon',
+                        loading: false
+                    };
+
+                    // Add to dropdown
+                    addCustomAreaToDropdown(areaParam, areaName);
+
+                    currentAreaId = areaParam;
+                    document.getElementById('area-name').textContent = areaName;
+
+                    // Clear active state from preset buttons
+                    document.querySelectorAll('.area-preset-btn').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+
+                    // Set active on custom button
+                    const customBtn = document.querySelector(`.area-preset-btn[data-area="${areaParam}"]`);
+                    if (customBtn) {
+                        customBtn.classList.add('active');
+                    }
+
+                    // Draw boundary
+                    if (typeof drawAreaBoundary === 'function') {
+                        drawAreaBoundary(boundary, 'polygon');
+                    }
+
+                    console.log(`[URL Load] Custom area loaded`);
+                } catch (error) {
+                    console.error('[URL Load] Failed to load custom area:', error);
+                    showToast('Failed to load area from URL');
+                }
+            }
+        }
+    }
+
+    // Load grid square if specified
     if (gridParam) {
         const parsed = parseGridRef(gridParam);
         if (parsed) {
@@ -274,6 +350,90 @@ function clearAreaSearchResults() {
 }
 
 /**
+ * Adds a custom area to the dropdown menu
+ */
+function addCustomAreaToDropdown(areaId, areaName) {
+    // Check if it already exists
+    if (document.querySelector(`.area-preset-btn[data-area="${areaId}"]`)) {
+        console.log(`[Custom Area] Button for ${areaId} already exists`);
+        return;
+    }
+
+    const presetsContainer = document.querySelector('.area-presets');
+
+    // Create a separator if this is the first custom area
+    if (!document.querySelector('.custom-areas-separator')) {
+        const separator = document.createElement('div');
+        separator.className = 'custom-areas-separator';
+        separator.innerHTML = '<span>Recent Searches</span>';
+        presetsContainer.appendChild(separator);
+    }
+
+    // Create the button
+    const button = document.createElement('button');
+    button.className = 'area-preset-btn custom-area-btn';
+    button.setAttribute('data-area', areaId);
+    button.innerHTML = `
+        <span class="material-symbols-outlined">search</span>
+        <span>${areaName}</span>
+        <button class="remove-custom-area" data-area="${areaId}" title="Remove">
+            <span class="material-symbols-outlined">close</span>
+        </button>
+    `;
+
+    // Add click handler
+    button.addEventListener('click', (e) => {
+        // Don't trigger if clicking the remove button
+        if (e.target.closest('.remove-custom-area')) {
+            return;
+        }
+        selectArea(areaId);
+    });
+
+    // Add remove button handler
+    const removeBtn = button.querySelector('.remove-custom-area');
+    removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeCustomArea(areaId);
+    });
+
+    presetsContainer.appendChild(button);
+    console.log(`[Custom Area] Added button for ${areaName}`);
+}
+
+/**
+ * Removes a custom area from the dropdown and AREA_REGIONS
+ */
+function removeCustomArea(areaId) {
+    console.log(`[Custom Area] Removing ${areaId}`);
+
+    // Remove from AREA_REGIONS
+    delete AREA_REGIONS[areaId];
+
+    // Remove button from dropdown
+    const button = document.querySelector(`.area-preset-btn[data-area="${areaId}"]`);
+    if (button) {
+        button.remove();
+    }
+
+    // Remove separator if no custom areas remain
+    const customButtons = document.querySelectorAll('.custom-area-btn');
+    if (customButtons.length === 0) {
+        const separator = document.querySelector('.custom-areas-separator');
+        if (separator) {
+            separator.remove();
+        }
+    }
+
+    // If this was the selected area, switch to Greater London
+    if (currentAreaId === areaId) {
+        selectArea('greater-london');
+    }
+
+    showToast('Custom area removed');
+}
+
+/**
  * Selects a custom area from search results
  */
 async function selectCustomArea(result) {
@@ -302,6 +462,9 @@ async function selectCustomArea(result) {
 
         console.log(`[Custom Area] Added to AREA_REGIONS as ${customAreaId}`);
 
+        // Add button to dropdown if it doesn't exist
+        addCustomAreaToDropdown(customAreaId, result.name);
+
         // Select this area
         currentAreaId = customAreaId;
 
@@ -312,6 +475,12 @@ async function selectCustomArea(result) {
         document.querySelectorAll('.area-preset-btn').forEach(btn => {
             btn.classList.remove('active');
         });
+
+        // Set active state on the custom button
+        const customBtn = document.querySelector(`.area-preset-btn[data-area="${customAreaId}"]`);
+        if (customBtn) {
+            customBtn.classList.add('active');
+        }
 
         // Clear search input and results
         document.getElementById('area-search-input').value = '';

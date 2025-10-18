@@ -326,27 +326,54 @@ function selectCategoryItem(category, index) {
     clearAllMarkerHighlights([stationMarkers, poiMarkers, amenityMarkers]);
     clearPolygons();
 
-    // Draw polygon if available
-    if (item.geometry && item.geometry.length > 2) {
+    // Draw polygon or line if available
+    if (item.geometry && item.geometry.length > 1) {
         const config = category === 'poi' ? getPOIIconConfig(item.tags) : getAmenityIconConfig(item.tags);
-        const polygon = L.polygon(item.geometry, {
-            color: config.color,
-            fillColor: config.color,
-            fillOpacity: 0.2,
-            weight: 2,
-            opacity: 0.7
-        }).addTo(map);
+
+        // Check if geometry forms a closed polygon
+        const first = item.geometry[0];
+        const last = item.geometry[item.geometry.length - 1];
+        const isClosed = (first[0] === last[0] && first[1] === last[1]);
+
+        let shape;
+        if (isClosed) {
+            // Render as filled polygon
+            shape = L.polygon(item.geometry, {
+                color: config.color,
+                fillColor: config.color,
+                fillOpacity: 0.2,
+                weight: 2,
+                opacity: 0.7
+            }).addTo(map);
+        } else {
+            // Render as line (polyline)
+            shape = L.polyline(item.geometry, {
+                color: config.color,
+                weight: 3,
+                opacity: 0.7
+            }).addTo(map);
+        }
+
+        // Bring to front
+        shape.bringToFront();
 
         if (category === 'poi') {
-            poiPolygons.push(polygon);
+            poiPolygons.push(shape);
         } else {
-            amenityPolygons.push(polygon);
+            amenityPolygons.push(shape);
         }
     }
 
-    // Highlight selected marker
+    // Highlight selected marker and bring to front
     const markers = category === 'poi' ? poiMarkers : amenityMarkers;
-    highlightMarker(markers[index]);
+    const marker = markers[index];
+    highlightMarker(marker);
+    if (marker && marker.getElement) {
+        const element = marker.getElement();
+        if (element) {
+            element.style.zIndex = 1000;
+        }
+    }
 
     // Center map
     map.panTo([item.lat, item.lon]);
@@ -369,7 +396,15 @@ function updateCategoryMapHighlighting(category) {
     const className = category === 'poi' ? 'poi-marker' : 'amenity-marker';
     const iconSize = category === 'poi' ? [24, 24] : [22, 22];
 
-    // Clear existing
+    // Get opposite category info
+    const oppositeCategory = category === 'poi' ? 'amenity' : 'poi';
+    const oppositeItems = category === 'poi' ? currentAmenities : currentPOIs;
+    const oppositeMarkers = category === 'poi' ? amenityMarkers : poiMarkers;
+    const oppositeIconFunc = category === 'poi' ? createAmenityMarkerIcon : createPOIMarkerIcon;
+    const oppositeClassName = category === 'poi' ? 'amenity-marker' : 'poi-marker';
+    const oppositeIconSize = category === 'poi' ? [22, 22] : [24, 24];
+
+    // Clear existing markers
     removeMarkers(markers);
     polygons.forEach(polygon => map.removeLayer(polygon));
     polygons.length = 0;
@@ -378,6 +413,17 @@ function updateCategoryMapHighlighting(category) {
     let itemsToShow = items;
     if (activeFilters.size > 0) {
         itemsToShow = items.filter(i => activeFilters.has(i.metadata));
+
+        // If filtering this category, hide the opposite category
+        removeMarkers(oppositeMarkers);
+    } else {
+        // No filters active, restore opposite category markers
+        removeMarkers(oppositeMarkers);
+        oppositeItems.forEach((item, index) => {
+            const iconHtml = oppositeIconFunc(item.tags);
+            const marker = createMarker(item, iconHtml, oppositeClassName, oppositeIconSize, () => selectCategoryItem(oppositeCategory, index));
+            oppositeMarkers.push(marker);
+        });
     }
 
     // Add markers for visible items

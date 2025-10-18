@@ -74,32 +74,69 @@ async function fetchAllNearbyData(easting, northing, squareSize, requestId) {
             node["railway"="station"]["name"](${south},${west},${north},${east});
             node["railway"="halt"]["name"](${south},${west},${north},${east});
 
-            /* POIs */
-            node["leisure"]["name"](${south},${west},${north},${east});
-            way["leisure"]["name"](${south},${west},${north},${east});
+            /* POIs - Leisure (excluding fitness_centre and sports_centre) */
+            node["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre"](${south},${west},${north},${east});
+            way["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre"](${south},${west},${north},${east});
+            rel["leisure"]["name"]["leisure"!~"fitness_centre|sports_centre"](${south},${west},${north},${east});
+
+            /* POIs - Natural features */
             node["natural"="peak"]["name"](${south},${west},${north},${east});
             node["natural"="water"]["name"](${south},${west},${north},${east});
             way["natural"="water"]["name"](${south},${west},${north},${east});
+            rel["natural"="water"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Waterways */
             node["waterway"]["name"](${south},${west},${north},${east});
             way["waterway"]["name"](${south},${west},${north},${east});
-            node["tourism"]["name"](${south},${west},${north},${east});
-            way["tourism"]["name"](${south},${west},${north},${east});
-            node["amenity"="library"]["name"](${south},${west},${north},${east});
-            node["amenity"="university"]["name"](${south},${west},${north},${east});
-            way["amenity"="university"]["name"](${south},${west},${north},${east});
-            node["man_made"="bridge"]["name"](${south},${west},${north},${east});
-            way["bridge"]["name"](${south},${west},${north},${east});
+            rel["waterway"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Tourism (excluding hotels) */
+            node["tourism"]["name"]["tourism"!="hotel"](${south},${west},${north},${east});
+            way["tourism"]["name"]["tourism"!="hotel"](${south},${west},${north},${east});
+            rel["tourism"]["name"]["tourism"!="hotel"](${south},${west},${north},${east});
+
+            /* POIs - Historic */
             node["historic"]["name"](${south},${west},${north},${east});
             way["historic"]["name"](${south},${west},${north},${east});
+            rel["historic"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Building amenities */
+            node["amenity"~"library|university|arts_centre|community_centre|conference_centre|events_venue|exhibition_centre"]["name"](${south},${west},${north},${east});
+            way["amenity"~"library|university|arts_centre|community_centre|conference_centre|events_venue|exhibition_centre"]["name"](${south},${west},${north},${east});
+            rel["amenity"~"library|university|arts_centre|community_centre|conference_centre|events_venue|exhibition_centre"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Misc amenities */
+            node["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace"]["name"](${south},${west},${north},${east});
+            way["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace"]["name"](${south},${west},${north},${east});
+            rel["amenity"~"fountain|planetarium|public_bookcase|stage|townhall|marketplace"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Shops */
+            node["shop"~"mall|department_store"]["name"](${south},${west},${north},${east});
+            way["shop"~"mall|department_store"]["name"](${south},${west},${north},${east});
+            rel["shop"~"mall|department_store"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Bridges */
+            node["man_made"="bridge"]["name"](${south},${west},${north},${east});
+            way["bridge"]["name"](${south},${west},${north},${east});
+            rel["bridge"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Aerodromes */
             node["aeroway"~"aerodrome|airport"]["name"](${south},${west},${north},${east});
             way["aeroway"~"aerodrome|airport"]["name"](${south},${west},${north},${east});
+            rel["aeroway"~"aerodrome|airport"]["name"](${south},${west},${north},${east});
+
+            /* POIs - Railway crossings */
             node["railway"="level_crossing"](${south},${west},${north},${east});
             node["railway"="crossing"](${south},${west},${north},${east});
 
             /* Amenities */
-            node["amenity"="drinking_water"](${south},${west},${north},${east});
+            node["amenity"~"drinking_water|water_point"](${south},${west},${north},${east});
             node["amenity"="hotel"]["name"](${south},${west},${north},${east});
             way["amenity"="hotel"]["name"](${south},${west},${north},${east});
+            rel["amenity"="hotel"]["name"](${south},${west},${north},${east});
+            node["tourism"="hotel"]["name"](${south},${west},${north},${east});
+            way["tourism"="hotel"]["name"](${south},${west},${north},${east});
+            rel["tourism"="hotel"]["name"](${south},${west},${north},${east});
             node["amenity"="toilets"](${south},${west},${north},${east});
         );
         out geom;
@@ -120,8 +157,8 @@ async function fetchAllNearbyData(easting, northing, squareSize, requestId) {
         // Categorize based on tags
         if (tags.railway === 'station' || tags.railway === 'halt') {
             stations.push(element);
-        } else if (tags.amenity === 'drinking_water' || tags.amenity === 'toilets' ||
-                   (tags.amenity === 'hotel' && tags.name)) {
+        } else if (tags.amenity === 'drinking_water' || tags.amenity === 'water_point' ||
+                   tags.amenity === 'toilets' || tags.amenity === 'hotel' || tags.tourism === 'hotel') {
             amenities.push(element);
         } else {
             pois.push(element);

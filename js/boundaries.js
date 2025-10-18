@@ -46,15 +46,34 @@ async function fetchOSMBoundary(relationId) {
             throw new Error(`No outer boundary found for relation ${relationId}`);
         }
 
-        // Combine all outer way geometries into a single boundary
-        // For simplicity, we'll concatenate all points (this works for convex hulls)
+        // Order and combine outer way geometries to form a proper boundary
+        // This prevents criss-crossing lines in complex multipolygons
         let allPoints = [];
-        outerWays.forEach((way, index) => {
-            console.log(`[Boundary Fetch] Outer way ${index + 1} has ${way.geometry.length} points`);
-            allPoints = allPoints.concat(way.geometry);
-        });
 
-        console.log(`[Boundary Fetch] Total points from all outer ways: ${allPoints.length}`);
+        if (outerWays.length === 1) {
+            // Simple case: single way
+            allPoints = outerWays[0].geometry;
+            console.log(`[Boundary Fetch] Single outer way with ${allPoints.length} points`);
+        } else {
+            // Complex case: multiple ways that need to be ordered
+            console.log(`[Boundary Fetch] Ordering ${outerWays.length} outer ways...`);
+
+            // Convert to lat/lon arrays for the shared orderWays function
+            const ways = outerWays.map(way =>
+                way.geometry.map(node => [node.lat, node.lon])
+            );
+
+            // Order the ways using shared function from geometry.js
+            const orderedWays = orderWays(ways);
+
+            // Flatten into single array
+            orderedWays.forEach((way, index) => {
+                console.log(`[Boundary Fetch] Outer way ${index + 1} has ${way.length} points`);
+                allPoints = allPoints.concat(way.map(p => ({ lat: p[0], lon: p[1] })));
+            });
+
+            console.log(`[Boundary Fetch] Total points from all outer ways: ${allPoints.length}`);
+        }
 
         // Convert lat/lon coordinates to OSGB36 easting/northing
         const boundary = allPoints.map(point => {

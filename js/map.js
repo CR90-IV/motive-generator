@@ -7,6 +7,7 @@ let map;
 let currentMarker;
 let searchExtentRectangle;
 let bufferOverlay;
+let areaBoundaryLayer;
 
 /**
  * Initializes the Leaflet map
@@ -70,18 +71,18 @@ function drawSearchExtent(south, west, north, east) {
         map.removeLayer(bufferOverlay);
     }
 
-    // Draw new search extent border
-    searchExtentRectangle = L.rectangle(
-        [[south, west], [north, east]],
-        {
-            color: '#6b7280',
-            weight: 1,
-            opacity: 0.5,
-            dashArray: '5, 5',
-            fillOpacity: 0,
-            interactive: false
-        }
-    ).addTo(map);
+    // // Draw new search extent border
+    // searchExtentRectangle = L.rectangle(
+    //     [[south, west], [north, east]],
+    //     {
+    //         color: '#6b7280',
+    //         weight: 1,
+    //         opacity: 0.5,
+    //         dashArray: '5, 5',
+    //         fillOpacity: 0,
+    //         interactive: false
+    //     }
+    // ).addTo(map);
 
     // Create grey overlay for areas outside the buffer zone
     // This is a polygon with a hole - outer boundary covers the world, inner hole is the buffer
@@ -110,6 +111,60 @@ function drawSearchExtent(south, west, north, east) {
 
     // Send overlay to back so it doesn't cover markers
     bufferOverlay.bringToBack();
+}
+
+/**
+ * Draws the selected area boundary on the map as a grey outline
+ * @param {Array|Object} boundary - Either a polygon array or bounds object
+ * @param {string} boundaryType - 'polygon' or 'bbox'
+ */
+function drawAreaBoundary(boundary, boundaryType) {
+    console.log(`[Area Boundary] Drawing boundary (type: ${boundaryType})`);
+
+    // Remove existing boundary layer
+    if (areaBoundaryLayer) {
+        map.removeLayer(areaBoundaryLayer);
+    }
+
+    if (boundaryType === 'bbox') {
+        // Draw bounding box as rectangle
+        const sw = osGridToLatLon(boundary.minEasting, boundary.minNorthing);
+        const ne = osGridToLatLon(boundary.maxEasting, boundary.maxNorthing);
+
+        areaBoundaryLayer = L.rectangle(
+            [[sw.lat, sw.lon], [ne.lat, ne.lon]],
+            {
+                color: '#6b7280',
+                weight: 2,
+                opacity: 0.6,
+                fillOpacity: 0,
+                interactive: false,
+                dashArray: '10, 5'
+            }
+        ).addTo(map);
+
+        console.log(`[Area Boundary] Drew bbox rectangle`);
+    } else {
+        // Draw polygon boundary
+        const latLonPoints = boundary.map(point => {
+            const coords = osGridToLatLon(point[0], point[1]);
+            return [coords.lat, coords.lon];
+        });
+
+        areaBoundaryLayer = L.polyline(latLonPoints, {
+            color: '#111827',
+            weight: 2,
+            opacity: 0.7,
+            fillOpacity: 0,
+            interactive: false,
+            dashArray: '10, 5'
+        }).addTo(map);
+
+        console.log(`[Area Boundary] Drew polygon with ${latLonPoints.length} points`);
+    }
+
+    // Send to back so it doesn't cover other elements
+    areaBoundaryLayer.bringToBack();
 }
 
 /**
@@ -194,8 +249,8 @@ function showSquare(easting, northing, squareSize = 1000) {
     // Show toast
     showToast(`Generated ${gridRef}`);
 
-    // Update URL
-    updateURL(gridRef);
+    // Update URL with current area
+    updateURL(gridRef, typeof currentAreaId !== 'undefined' ? currentAreaId : 'greater-london');
 
     // Fetch all data in a single query
     fetchAllData(easting, northing, squareSize);

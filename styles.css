@@ -512,8 +512,9 @@ body {
     flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem 0;
-    max-height: 500px;
-    overflow: hidden;
+    max-height: 200px;
+    overflow-y: auto;
+    overflow-x: hidden;
     transition: max-height var(--transition-fast), opacity var(--transition-fast);
     opacity: 1;
 }
@@ -522,6 +523,7 @@ body {
     max-height: 0;
     opacity: 0;
     padding: 0;
+    overflow: hidden;
 }
 
 .filter-btn {
@@ -740,6 +742,63 @@ body {
 .area-preset-btn .material-symbols-outlined {
     font-size: 20px;
     flex-shrink: 0;
+}
+
+/* Custom area separator */
+.custom-areas-separator {
+    padding: 0.5rem 0.25rem;
+    margin: 0.5rem 0;
+    border-top: 1px solid var(--color-border);
+}
+
+.custom-areas-separator span {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+}
+
+/* Custom area button styling */
+.custom-area-btn {
+    position: relative;
+    justify-content: space-between;
+}
+
+.custom-area-btn .remove-custom-area {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.custom-area-btn:hover .remove-custom-area {
+    display: flex;
+}
+
+.custom-area-btn .remove-custom-area:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.custom-area-btn.active .remove-custom-area:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.custom-area-btn .remove-custom-area .material-symbols-outlined {
+    font-size: 16px;
+    color: var(--color-text-secondary);
+}
+
+.custom-area-btn.active .remove-custom-area .material-symbols-outlined {
+    color: white;
 }
 
 .area-search {

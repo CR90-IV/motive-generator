@@ -38,7 +38,7 @@ function createPOIMarkerIcon(tags) {
             width: 24px;
             height: 24px;
             background: ${hexToRgba(config.color, 0.75)};
-            border: 2px solid white;
+            border: 1px solid white;
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -61,20 +61,20 @@ function createAmenityMarkerIcon(tags) {
     const config = getAmenityIconConfig(tags);
     return `
         <div style="
-            width: 22px;
-            height: 22px;
+            width: 15px;
+            height: 15px;
             background: ${hexToRgba(config.color, 0.7)};
-            border: 2px solid white;
-            border-radius: 50%;
+            border: 1px solid white;
+            border-radius: 25%;
             display: flex;
             align-items: center;
             justify-content: center;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         ">
             <span class="material-symbols-outlined" style="
-                font-size: 14px;
+                font-size: 12px;
                 color: white;
-                font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+                font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 12;
             ">${config.icon}</span>
         </div>
     `;
@@ -129,7 +129,11 @@ function createMarker(item, iconHtml, className, iconSize, onClickCallback) {
     const marker = L.marker([item.lat, item.lon], { icon })
         .bindPopup(popupContent, {
             closeButton: true,
-            offset: [0, -iconSize[1] / 2]
+            offset: [0, -iconSize[1] / 2],
+            autoPan: true,
+            autoPanPadding: [50, 50],
+            maxHeight: 300,
+            maxWidth: 300
         })
         .addTo(map);
 

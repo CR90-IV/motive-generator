@@ -11,13 +11,25 @@ const STATION_CONFIG = {
 
 // POI type configuration (in priority order)
 const POI_CONFIG = [
-    { check: (t) => t.leisure === 'park' || t.leisure === 'garden', icon: 'park', color: '#059669' },
+    { check: (t) => t.leisure === 'park' || t.leisure === 'garden' || t.leisure === 'nature_reserve', icon: 'park', color: '#059669' },
     { check: (t) => t.tourism === 'museum', icon: 'museum', color: '#8b5cf6' },
     { check: (t) => t.historic === 'memorial' || t.historic === 'monument', icon: 'military_tech', color: '#6b7280' },
     { check: (t) => t.amenity === 'library', icon: 'local_library', color: '#0891b2' },
     { check: (t) => t.amenity === 'university', icon: 'school', color: '#0891b2' },
+    { check: (t) => t.amenity === 'planetarium', icon: 'public', color: '#8b5cf6' },
     { check: (t) => t.amenity === 'theatre', icon: 'theater_comedy', color: '#ec4899' },
     { check: (t) => t.amenity === 'cinema', icon: 'local_movies', color: '#dc2626' },
+    { check: (t) => t.amenity === 'arts_centre', icon: 'palette', color: '#ec4899' },
+    { check: (t) => t.amenity === 'community_centre', icon: 'groups', color: '#0891b2' },
+    { check: (t) => t.amenity === 'conference_centre', icon: 'meeting_room', color: '#6b7280' },
+    { check: (t) => t.amenity === 'events_venue', icon: 'celebration', color: '#f59e0b' },
+    { check: (t) => t.amenity === 'exhibition_centre', icon: 'museum', color: '#8b5cf6' },
+    { check: (t) => t.amenity === 'fountain', icon: 'sprinkler', color: '#0284c7' },
+    { check: (t) => t.amenity === 'public_bookcase', icon: 'book', color: '#0891b2' },
+    { check: (t) => t.amenity === 'stage', icon: 'podium', color: '#ec4899' },
+    { check: (t) => t.amenity === 'townhall', icon: 'account_balance', color: '#6b7280' },
+    { check: (t) => t.amenity === 'marketplace', icon: 'storefront', color: '#f59e0b' },
+    { check: (t) => t.shop === 'mall' || t.shop === 'department_store', icon: 'local_mall', color: '#ec4899' },
     { check: (t) => t.tourism === 'attraction', icon: 'attractions', color: '#f59e0b' },
     { check: (t) => t.tourism === 'viewpoint', icon: 'visibility', color: '#3b82f6' },
     { check: (t) => t.natural === 'peak', icon: 'terrain', color: '#78716c' },
@@ -28,14 +40,16 @@ const POI_CONFIG = [
     { check: (t) => t.building, icon: 'domain', color: '#6b7280' },
     { check: (t) => t.historic, icon: 'history_edu', color: '#92400e' },
     { check: (t) => t.leisure, icon: 'sports_soccer', color: '#059669' },
+    { check: (t) => t.shop, icon: 'shopping_bag', color: '#f59e0b' },
     { check: (t) => t.tourism, icon: 'tour', color: '#f59e0b' }
 ];
 
 // Amenity type configuration
 const AMENITY_CONFIG = {
     'drinking_water': { icon: 'water_drop', color: '#0284c7' },
+    'water_point': { icon: 'water_drop', color: '#0284c7' },
     'cafe': { icon: 'local_cafe', color: '#92400e' },
-    'hotel': { icon: 'hotel', color: '#7c3aed' },
+    'hotel': { icon: 'hotel', color: '#6b7280' },
     'toilets': { icon: 'wc', color: '#0891b2' }
 };
 
@@ -72,6 +86,10 @@ function getPOIIconConfig(tags) {
  * Gets icon and color for amenity based on tags
  */
 function getAmenityIconConfig(tags) {
+    // Check tourism=hotel first
+    if (tags.tourism === 'hotel') {
+        return AMENITY_CONFIG['hotel'];
+    }
     const amenityType = tags.amenity;
     return AMENITY_CONFIG[amenityType] || { icon: 'store', color: '#6b7280' };
 }
@@ -139,9 +157,12 @@ function getDefaultName(tags) {
     if (tags.railway === 'level_crossing') return 'Railway Level Crossing';
     if (tags.railway === 'crossing') return 'Railway Crossing';
     if (tags.amenity === 'drinking_water') return 'Drinking Water';
+    if (tags.amenity === 'water_point') return 'Water Point';
     if (tags.amenity === 'toilets') return 'Public Toilets';
+    if (tags.amenity === 'fountain') return 'Fountain';
+    if (tags.amenity === 'public_bookcase') return 'Public Bookcase';
     if (tags.amenity === 'cafe') return 'Cafe';
-    if (tags.amenity === 'hotel') return 'Hotel';
+    if (tags.amenity === 'hotel' || tags.tourism === 'hotel') return 'Hotel';
     return null;
 }
 
