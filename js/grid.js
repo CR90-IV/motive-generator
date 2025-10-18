@@ -342,7 +342,7 @@ function parseGridRef(gridRef) {
 }
 
 /**
- * London boundaries
+ * London boundaries (bounding box - kept for reference)
  */
 const LONDON_BOUNDS = {
     minEasting: 503000,
@@ -362,14 +362,205 @@ const CENTRAL_LONDON_BOUNDS = {
 };
 
 /**
- * Generates random 1km square within specified bounds
- * @param {Object} bounds - Bounds object with minEasting, maxEasting, minNorthing, maxNorthing
+ * Greater London boundary polygon (OS Grid coordinates - easting, northing)
+ * Simplified boundary with ~40 points covering Greater London administrative area
+ */
+const GREATER_LONDON_POLYGON = [
+    [505000, 200000], [510000, 199000], [515000, 198000], [520000, 197000],
+    [525000, 196000], [530000, 196000], [535000, 196000], [540000, 196000],
+    [545000, 195000], [550000, 194000], [555000, 192000], [558000, 189000],
+    [560000, 185000], [561000, 180000], [560000, 175000], [558000, 170000],
+    [555000, 166000], [552000, 163000], [548000, 160000], [544000, 158000],
+    [540000, 157000], [535000, 156000], [530000, 156000], [525000, 155000],
+    [520000, 155000], [515000, 156000], [510000, 157000], [507000, 160000],
+    [505000, 164000], [504000, 168000], [503000, 172000], [503000, 176000],
+    [503000, 180000], [503000, 184000], [504000, 188000], [504000, 192000],
+    [505000, 196000], [505000, 200000]
+];
+
+/**
+ * Central London boundary polygon (more accurate than bbox)
+ */
+const CENTRAL_LONDON_POLYGON = [
+    [525000, 185000], [528000, 184500], [531000, 184000], [533000, 183000],
+    [535000, 181000], [535000, 179000], [535000, 177000], [534000, 175000],
+    [532000, 175000], [530000, 175000], [528000, 175000], [526000, 176000],
+    [525000, 177000], [525000, 179000], [525000, 181000], [525000, 183000],
+    [525000, 185000]
+];
+
+/**
+ * City of London boundary polygon (Square Mile)
+ */
+const CITY_OF_LONDON_POLYGON = [
+    [532000, 181500], [533000, 181500], [533500, 181000], [533500, 180500],
+    [533500, 180000], [533000, 180000], [532500, 180000], [532000, 180500],
+    [532000, 181000], [532000, 181500]
+];
+
+/**
+ * United Kingdom bounding box (using OS Grid extent)
+ * Note: Using bbox for UK-wide as polygon would be too large
+ */
+const UK_BOUNDS = {
+    minEasting: 0,
+    maxEasting: 700000,
+    minNorthing: 0,
+    maxNorthing: 1300000
+};
+
+/**
+ * Available geographic regions for selection
+ */
+const AREA_REGIONS = {
+    'city-of-london': {
+        name: 'City of London',
+        osmRelationId: 51800,
+        boundary: CITY_OF_LONDON_POLYGON, // Fallback
+        type: 'polygon',
+        loading: false
+    },
+    'greater-london': {
+        name: 'Greater London',
+        osmRelationId: 175342,
+        boundary: GREATER_LONDON_POLYGON, // Fallback
+        type: 'polygon',
+        loading: false
+    },
+    'united-kingdom': {
+        name: 'United Kingdom',
+        osmRelationId: 62149,
+        boundary: UK_BOUNDS, // Fallback
+        type: 'bbox',
+        loading: false
+    }
+};
+
+/**
+ * Loads OSM boundaries for all preset regions
+ * This runs asynchronously in the background
+ */
+async function loadPresetBoundaries() {
+    for (const areaId in AREA_REGIONS) {
+        const region = AREA_REGIONS[areaId];
+
+        if (region.osmRelationId && !region.loading) {
+            region.loading = true;
+
+            try {
+                console.log(`[Boundaries] Loading ${region.name}...`);
+                const boundary = await fetchOSMBoundary(region.osmRelationId);
+
+                // Update the region with the fetched boundary
+                region.boundary = boundary;
+                region.type = 'polygon';
+
+                console.log(`[Boundaries] Loaded ${region.name}: ${boundary.length} points`);
+
+                // Redraw boundary if this is the currently selected area
+                if (typeof currentAreaId !== 'undefined' && currentAreaId === areaId && typeof drawAreaBoundary === 'function') {
+                    console.log(`[Boundaries] Redrawing boundary for active area ${region.name}`);
+                    drawAreaBoundary(boundary, 'polygon');
+                }
+            } catch (error) {
+                console.warn(`[Boundaries] Failed to load ${region.name}, using fallback:`, error);
+                // Keep the fallback boundary
+            } finally {
+                region.loading = false;
+            }
+        }
+    }
+}
+
+// Start loading boundaries when this script loads
+if (typeof window !== 'undefined') {
+    window.addEventListener('load', () => {
+        loadPresetBoundaries();
+    });
+}
+
+/**
+ * Tests if a point is inside a polygon using ray casting algorithm
+ * @param {number} easting - Point easting coordinate
+ * @param {number} northing - Point northing coordinate
+ * @param {Array} polygon - Array of [easting, northing] coordinate pairs
+ * @returns {boolean} True if point is inside polygon
+ */
+function isPointInPolygon(easting, northing, polygon) {
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i][0], yi = polygon[i][1];
+        const xj = polygon[j][0], yj = polygon[j][1];
+
+        const intersect = ((yi > northing) !== (yj > northing)) &&
+            (easting < (xj - xi) * (northing - yi) / (yj - yi) + xi);
+
+        if (intersect) inside = !inside;
+    }
+
+    return inside;
+}
+
+/**
+ * Generates random 1km square within specified polygon boundary
+ * @param {Array|Object} boundary - Either a polygon array or bounds object for backwards compatibility
  * @returns {{easting: number, northing: number}}
  */
-function getRandomSquare(bounds = LONDON_BOUNDS) {
-    const easting = Math.floor(Math.random() * (bounds.maxEasting - bounds.minEasting) / 1000) * 1000 + bounds.minEasting;
-    const northing = Math.floor(Math.random() * (bounds.maxNorthing - bounds.minNorthing) / 1000) * 1000 + bounds.minNorthing;
-    return { easting, northing };
+function getRandomSquare(boundary = GREATER_LONDON_POLYGON) {
+    console.log(`[Random Square] Called with boundary:`, boundary);
+    console.log(`[Random Square] Boundary type:`, Array.isArray(boundary) ? 'polygon' : 'bbox');
+
+    // Handle backwards compatibility with bbox bounds
+    if (boundary.minEasting !== undefined) {
+        console.log(`[Random Square] Using bbox mode`);
+        const easting = Math.floor(Math.random() * (boundary.maxEasting - boundary.minEasting) / 1000) * 1000 + boundary.minEasting;
+        const northing = Math.floor(Math.random() * (boundary.maxNorthing - boundary.minNorthing) / 1000) * 1000 + boundary.minNorthing;
+        console.log(`[Random Square] Generated (bbox): E=${easting}, N=${northing}`);
+        return { easting, northing };
+    }
+
+    // For polygon boundaries, calculate bounding box first for efficiency
+    const minEasting = Math.min(...boundary.map(p => p[0]));
+    const maxEasting = Math.max(...boundary.map(p => p[0]));
+    const minNorthing = Math.min(...boundary.map(p => p[1]));
+    const maxNorthing = Math.max(...boundary.map(p => p[1]));
+
+    console.log(`[Random Square] Polygon bounds - E: ${minEasting} to ${maxEasting}, N: ${minNorthing} to ${maxNorthing}`);
+    console.log(`[Random Square] Polygon has ${boundary.length} points`);
+
+    // Keep trying random points until we find one inside the polygon
+    let attempts = 0;
+    const maxAttempts = 1000;
+
+    while (attempts < maxAttempts) {
+        const easting = Math.floor(Math.random() * (maxEasting - minEasting) / 1000) * 1000 + minEasting;
+        const northing = Math.floor(Math.random() * (maxNorthing - minNorthing) / 1000) * 1000 + minNorthing;
+
+        // Check if this 1km square's center is inside the polygon
+        const centerEasting = easting + 500;
+        const centerNorthing = northing + 500;
+
+        const isInside = isPointInPolygon(centerEasting, centerNorthing, boundary);
+
+        if (attempts < 3) {
+            console.log(`[Random Square] Attempt ${attempts + 1}: E=${easting}, N=${northing}, center=(${centerEasting}, ${centerNorthing}), inside=${isInside}`);
+        }
+
+        if (isInside) {
+            console.log(`[Random Square] Found valid point after ${attempts + 1} attempts: E=${easting}, N=${northing}`);
+            return { easting, northing };
+        }
+
+        attempts++;
+    }
+
+    // Fallback: if we can't find a point after many attempts, return center of bbox
+    console.warn('[Random Square] Could not find random point in polygon after', maxAttempts, 'attempts, using fallback');
+    const fallbackEasting = Math.floor((minEasting + maxEasting) / 2000) * 1000;
+    const fallbackNorthing = Math.floor((minNorthing + maxNorthing) / 2000) * 1000;
+    console.log(`[Random Square] Fallback point: E=${fallbackEasting}, N=${fallbackNorthing}`);
+    return { easting: fallbackEasting, northing: fallbackNorthing };
 }
 
 /**

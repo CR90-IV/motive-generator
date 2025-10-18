@@ -13,9 +13,9 @@
     <header class="app-header">
         <h1>London Motive Generator</h1>
         <div class="header-controls">
-            <button id="central-toggle" class="central-toggle" aria-label="Toggle central London only">
-                <span class="material-symbols-outlined">location_city</span>
-                <span class="toggle-label">Central only</span>
+            <button id="area-pill" class="area-pill" aria-label="Select area">
+                <span class="area-label">Area: <span id="area-name">Greater London</span></span>
+                <span class="material-symbols-outlined">expand_more</span>
             </button>
             <button id="randomize-btn" class="randomize-btn" aria-label="Generate random square">
                 <span class="material-symbols-outlined">refresh</span>
@@ -36,6 +36,41 @@
                 <span class="material-symbols-outlined">refresh</span>
                 Generate first square
             </button>
+        </div>
+    </div>
+
+    <!-- Area selection dropdown -->
+    <div id="area-dropdown" class="area-dropdown hidden">
+        <div class="area-dropdown-content">
+            <div class="area-presets">
+                <button class="area-preset-btn" data-area="city-of-london">
+                    <span class="material-symbols-outlined">location_city</span>
+                    <span>City of London</span>
+                </button>
+                <button class="area-preset-btn active" data-area="greater-london">
+                    <span class="material-symbols-outlined">apartment</span>
+                    <span>Greater London</span>
+                </button>
+                <button class="area-preset-btn" data-area="united-kingdom">
+                    <span class="material-symbols-outlined">public</span>
+                    <span>United Kingdom</span>
+                </button>
+            </div>
+
+            <div class="area-search">
+                <input
+                    type="text"
+                    id="area-search-input"
+                    class="area-search-input"
+                    placeholder="Search for a place..."
+                    aria-label="Search for area"
+                    autocomplete="off"
+                />
+                <span class="material-symbols-outlined search-icon">search</span>
+            </div>
+
+            <!-- Search results -->
+            <div id="area-search-results" class="area-search-results hidden"></div>
         </div>
     </div>
 
@@ -109,11 +144,21 @@
     <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="utils.js"></script>
-    <script src="grid.js"></script>
-    <script src="map.js"></script>
-    <script src="stations.js"></script>
-    <script src="pois.js"></script>
-    <script src="ui.js"></script>
+    <!-- Core utilities (no dependencies) -->
+    <script src="js/utils.js"></script>
+    <script src="js/grid.js"></script>
+
+    <!-- Shared utilities (depend on utils, grid) -->
+    <script src="js/geometry.js"></script>
+    <script src="js/icons.js"></script>
+    <script src="js/overpass.js"></script>
+    <script src="js/boundaries.js"></script>
+    <script src="js/markers.js"></script>
+
+    <!-- Features (depend on shared utilities) -->
+    <script src="js/map.js"></script>
+    <script src="js/stations.js"></script>
+    <script src="js/pois.js"></script>
+    <script src="js/ui.js"></script>
 </body>
 </html>

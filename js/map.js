@@ -6,6 +6,7 @@
 let map;
 let currentMarker;
 let searchExtentRectangle;
+let bufferOverlay;
 
 /**
  * Initializes the Leaflet map
@@ -54,18 +55,22 @@ function handleMapRightClick(e) {
 
 /**
  * Draws search extent rectangle on map with dotted line
+ * Also draws grey overlay outside the buffer zone
  * @param {number} south - Southern boundary (latitude)
  * @param {number} west - Western boundary (longitude)
  * @param {number} north - Northern boundary (latitude)
  * @param {number} east - Eastern boundary (longitude)
  */
 function drawSearchExtent(south, west, north, east) {
-    // Remove existing search extent
+    // Remove existing layers
     if (searchExtentRectangle) {
         map.removeLayer(searchExtentRectangle);
     }
+    if (bufferOverlay) {
+        map.removeLayer(bufferOverlay);
+    }
 
-    // Draw new search extent
+    // Draw new search extent border
     searchExtentRectangle = L.rectangle(
         [[south, west], [north, east]],
         {
@@ -77,6 +82,34 @@ function drawSearchExtent(south, west, north, east) {
             interactive: false
         }
     ).addTo(map);
+
+    // Create grey overlay for areas outside the buffer zone
+    // This is a polygon with a hole - outer boundary covers the world, inner hole is the buffer
+    const worldBounds = [
+        [-90, -180],
+        [-90, 180],
+        [90, 180],
+        [90, -180],
+        [-90, -180]
+    ];
+
+    const bufferHole = [
+        [south, west],
+        [south, east],
+        [north, east],
+        [north, west],
+        [south, west]
+    ];
+
+    bufferOverlay = L.polygon([worldBounds, bufferHole], {
+        color: 'transparent',
+        fillColor: '#374151',
+        fillOpacity: 0.3,
+        interactive: false
+    }).addTo(map);
+
+    // Send overlay to back so it doesn't cover markers
+    bufferOverlay.bringToBack();
 }
 
 /**
@@ -116,9 +149,10 @@ function showSquare(easting, northing, squareSize = 1000) {
         [nw.lat, nw.lon]
     ], {
         color: '#111827',
-        fillColor: '#111827',
-        fillOpacity: 0.15,
-        weight: 2
+        fillOpacity: 0,
+        weight: 2,
+        dashArray: '8, 6',
+        interactive: false
     }).addTo(map);
 
     currentMarker = square;
@@ -163,7 +197,36 @@ function showSquare(easting, northing, squareSize = 1000) {
     // Update URL
     updateURL(gridRef);
 
-    // Find stations and POIs
-    findNearbyStations(easting, northing, squareSize);
-    findNearbyPOIs(easting, northing, squareSize);
+    // Fetch all data in a single query
+    fetchAllData(easting, northing, squareSize);
+}
+
+/**
+ * Fetches all nearby data (stations, POIs, amenities) in a single query
+ */
+async function fetchAllData(easting, northing, squareSize) {
+    try {
+        const requestId = Date.now();
+        const data = await fetchAllNearbyData(easting, northing, squareSize, requestId);
+
+        const { stations, pois, amenities, bounds } = data;
+
+        // Draw search extent
+        drawSearchExtent(bounds.south, bounds.west, bounds.north, bounds.east);
+
+        // Process stations with fallback
+        const stationsWithFallback = await fetchStationsWithFallback(
+            easting, northing, squareSize, stations, requestId
+        );
+
+        // Update all sections
+        findNearbyStations(easting, northing, squareSize, stationsWithFallback, bounds);
+        findNearbyPOIs(easting, northing, squareSize, pois, amenities, bounds);
+
+    } catch (error) {
+        console.error('[Combined Data Fetch] Error:', error);
+        // Fallback to individual queries
+        findNearbyStations(easting, northing, squareSize);
+        findNearbyPOIs(easting, northing, squareSize);
+    }
 }
